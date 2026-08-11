@@ -1,0 +1,21 @@
+
+logs
+.idea
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Output files
+*.pth
+snapshots/*
+outputs/*
+*.log
+
+# Evaluation files
+evaluations/*
+*.pdf
+*.jpg
+*.png
+*.nc

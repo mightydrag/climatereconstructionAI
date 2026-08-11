@@ -1,93 +1,297 @@
-# CRAI Trees
+# CRAI (Climate Reconstruction AI)
 
+Software to train/evaluate models to reconstruct missing values in climate data (e.g., HadCRUT4) based on a U-Net with partial convolutions.
 
+## Dependencies
+- pytorch>=1.11.0
+- tqdm>=4.64.0
+- torchvision>=0.12.0
+- torchmetrics>=0.11.2
+- numpy>=1.21.6
+- matplotlib>=3.5.1
+- tensorboardX>=2.5
+- tensorboard>=2.9.0
+- xarray>=2022.3.0
+- dask>=2022.7.0
+- netcdf4>=1.5.8
+- setuptools==59.5.0
+- xesmf>=0.6.2
+- cartopy>=0.20.2
+- numba>=0.55.1
 
-## Getting started
-
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
-
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
-
+An Anaconda environment with all the required dependencies can be created using `environment.yml`:
+```bash
+conda env create -f environment.yml
 ```
-cd existing_repo
-git remote add origin https://gitlab.rrz.uni-hamburg.de/bbe2043/crai-trees.git
-git branch -M main
-git push -uf origin main
+To activate the environment, use:
+```bash
+conda activate crai
 ```
 
-## Integrate with your tools
-
-* [Set up project integrations](https://gitlab.rrz.uni-hamburg.de/bbe2043/crai-trees/-/settings/integrations)
-
-## Collaborate with your team
-
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
-
-## Test and Deploy
-
-Use the built-in continuous integration in GitLab.
-
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
-
-***
-
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+`environment-cuda.yml` should be used when working with GPUs using CUDA.
 
 ## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+
+`climatereconstructionAI` can be installed using `pip` in the current directory:
+```bash
+pip install .
+```
 
 ## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+The software can be used to:
+- train a model (**training**)
+- infill climate datasets using a trained model (**evaluation**)
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+### Input data
+The directory containing the climate datasets should have the following sub-directories:
+- `data` and `val` for training
+- `test` for evaluation
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+The climate datasets should be in netCDF format and placed in the corresponding sub-directories.
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+The missing values can be defined separately as masks containing zeros (for the missing values) and ones (for the valid values). These masks should be in netCDF format and have the same dimension as the climate dataset. For the training, it is possible to shuffle the sequence of masks by using the "shuffle-masks" option.
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+A PyTorch model is required for the evaluation.
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+### Execution
+
+Once installed, the package can be used as:
+- a command line interface (CLI):
+  - training:
+  ```bash
+  crai-train
+  ```
+  - evaluation:
+  ```bash
+  crai-evaluate
+  ```
+- a Python library:
+  - training:
+  ```python
+  from climatereconstructionai import train
+  train()
+  ```
+  - evaluation:
+  ```python
+  from climatereconstructionai import evaluate
+  evaluate()
+  ```
+
+For more information about the arguments:
+```bash
+usage: crai-train [-h] [--data-root-dir DATA_ROOT_DIR] [--mask-dir MASK_DIR] [--log-dir LOG_DIR] [--data-names DATA_NAMES] [--mask-names MASK_NAMES] [--data-types DATA_TYPES]
+                  [--n-target-data N_TARGET_DATA] [--device DEVICE] [--shuffle-masks] [--channel-steps CHANNEL_STEPS] [--lstm-steps LSTM_STEPS] [--gru-steps GRU_STEPS]
+                  [--encoding-layers ENCODING_LAYERS] [--pooling-layers POOLING_LAYERS] [--conv-factor CONV_FACTOR] [--weights WEIGHTS] [--steady-masks STEADY_MASKS]
+                  [--loop-random-seed LOOP_RANDOM_SEED] [--cuda-random-seed CUDA_RANDOM_SEED] [--deterministic] [--attention] [--channel-reduction-rate CHANNEL_REDUCTION_RATE] [--disable-skip-layers]
+                  [--disable-first-bn] [--masked-bn] [--lazy-load] [--global-padding] [--normalize-data] [--n-filters N_FILTERS] [--out-channels OUT_CHANNELS] [--dataset-name DATASET_NAME]
+                  [--min-bounds MIN_BOUNDS] [--max-bounds MAX_BOUNDS] [--profile] [--val-names VAL_NAMES] [--snapshot-dir SNAPSHOT_DIR] [--resume-iter RESUME_ITER] [--batch-size BATCH_SIZE]
+                  [--n-threads N_THREADS] [--multi-gpus] [--finetune] [--lr LR] [--lr-finetune LR_FINETUNE] [--max-iter MAX_ITER] [--log-interval LOG_INTERVAL]
+                  [--lr-scheduler-patience LR_SCHEDULER_PATIENCE] [--save-model-interval SAVE_MODEL_INTERVAL] [--n-final-models N_FINAL_MODELS] [--final-models-interval FINAL_MODELS_INTERVAL]
+                  [--loss-criterion LOSS_CRITERION] [--eval-timesteps EVAL_TIMESTEPS] [-f LOAD_FROM_FILE] [--vlim VLIM] [--lambda-loss LAMBDA_LOSS] [--val-metrics VAL_METRICS]
+                  [--tensor-plots TENSOR_PLOTS] [--early-stopping-delta EARLY_STOPPING_DELTA] [--early-stopping-patience EARLY_STOPPING_PATIENCE] [--n-iters-val N_ITERS_VAL]
+
+options:
+  -h, --help            show this help message and exit
+  --data-root-dir DATA_ROOT_DIR
+                        Root directory containing the climate datasets
+  --mask-dir MASK_DIR   Directory containing the mask datasets
+  --log-dir LOG_DIR     Directory where the log files will be stored
+  --data-names DATA_NAMES
+                        Comma separated list of netCDF files (climate dataset) for training/infilling
+  --mask-names MASK_NAMES
+                        Comma separated list of netCDF files (mask dataset). If None, it extracts the masks from the climate dataset
+  --data-types DATA_TYPES
+                        Comma separated list of variable types, in the same order as data-names and mask-names
+  --n-target-data N_TARGET_DATA
+                        Number of data-names (from last) to be used as target data
+  --device DEVICE       Device used by PyTorch (cuda or cpu)
+  --shuffle-masks       Select mask indices randomly
+  --channel-steps CHANNEL_STEPS
+                        Comma separated number of considered sequences for channeled memory:past_steps,future_steps
+  --lstm-steps LSTM_STEPS
+                        Comma separated number of considered sequences for lstm: past_steps,future_steps
+  --gru-steps GRU_STEPS
+                        Comma separated number of considered sequences for gru: past_steps,future_steps
+  --encoding-layers ENCODING_LAYERS
+                        Number of encoding layers in the CNN
+  --pooling-layers POOLING_LAYERS
+                        Number of pooling layers in the CNN
+  --conv-factor CONV_FACTOR
+                        Number of channels in the deepest layer
+  --weights WEIGHTS     Initialization weight
+  --steady-masks STEADY_MASKS
+                        Comma separated list of netCDF files containing a single mask to be applied to all timesteps. The number of steady-masks must be the same as out-channels
+  --loop-random-seed LOOP_RANDOM_SEED
+                        Random seed for iteration loop
+  --cuda-random-seed CUDA_RANDOM_SEED
+                        Random seed for CUDA
+  --deterministic       Disable cudnn backends for reproducibility
+  --attention           Enable the attention module
+  --channel-reduction-rate CHANNEL_REDUCTION_RATE
+                        Channel reduction rate for the attention module
+  --disable-skip-layers
+                        Disable the skip layers
+  --disable-first-bn    Disable the batch normalization on the first layer
+  --masked-bn           Use masked batch normalization instead of standard BN
+  --lazy-load           Use lazy loading for large datasets
+  --global-padding      Use a custom padding for global dataset
+  --normalize-data      Normalize the input climate data to 0 mean and 1 std
+  --n-filters N_FILTERS
+                        Number of filters for the first/last layer
+  --out-channels OUT_CHANNELS
+                        Number of channels for the output data
+  --dataset-name DATASET_NAME
+                        Name of the dataset for format checking
+  --min-bounds MIN_BOUNDS
+                        Comma separated list of values defining the permitted lower-bound of output values
+  --max-bounds MAX_BOUNDS
+                        Comma separated list of values defining the permitted upper-bound of output values
+  --profile             Profile code using tensorboard profiler
+  --val-names VAL_NAMES
+                        Comma separated list of netCDF files (climate dataset) for validation
+  --snapshot-dir SNAPSHOT_DIR
+                        Parent directory of the training checkpoints and the snapshot images
+  --resume-iter RESUME_ITER
+                        Iteration step from which the training will be resumed
+  --batch-size BATCH_SIZE
+                        Batch size
+  --n-threads N_THREADS
+                        Number of workers used in the data loader
+  --multi-gpus          Use multiple GPUs, if any
+  --finetune            Enable the fine tuning mode (use fine tuning parameterization and disable batch normalization
+  --lr LR               Learning rate
+  --lr-finetune LR_FINETUNE
+                        Learning rate for fine tuning
+  --max-iter MAX_ITER   Maximum number of iterations
+  --log-interval LOG_INTERVAL
+                        Iteration step interval at which a tensorboard summary log should be written
+  --lr-scheduler-patience LR_SCHEDULER_PATIENCE
+                        Patience for the lr scheduler
+  --save-model-interval SAVE_MODEL_INTERVAL
+                        Iteration step interval at which the model should be saved
+  --n-final-models N_FINAL_MODELS
+                        Number of final models to be saved
+  --final-models-interval FINAL_MODELS_INTERVAL
+                        Iteration step interval at which the final models should be saved
+  --loss-criterion LOSS_CRITERION
+                        Index defining the loss function (0=original from Liu et al., 1=MAE of the hole region)
+  --eval-timesteps EVAL_TIMESTEPS
+                        Sample indices for which a snapshot is created at each iter defined by log-interval
+  -f LOAD_FROM_FILE, --load-from-file LOAD_FROM_FILE
+                        Load all the arguments from a text file
+  --vlim VLIM           Comma separated list of vmin,vmax values for the color scale of the snapshot images
+  --lambda-loss LAMBDA_LOSS
+                        Comma separated list of lambda factors (key) followed by their corresponding values.Overrides the loss_criterion pre-setting
+  --val-metrics VAL_METRICS
+                        Comma separated list of metrics that are evaluated on the val dataset at log-interval
+  --tensor-plots TENSOR_PLOTS
+                        Comma separated list of 2D plots to be added to tensorboard (error, distribution, correlation)
+  --early-stopping-delta EARLY_STOPPING_DELTA
+                        Mean relative delta of the val loss used for the termination criterion
+  --early-stopping-patience EARLY_STOPPING_PATIENCE
+                        Number of log-interval iterations used for the termination criterion
+  --n-iters-val N_ITERS_VAL
+                        Number of batch iterations used to average the validation loss
+```
+
+```bash
+usage: crai-evaluate [-h] [--data-root-dir DATA_ROOT_DIR] [--mask-dir MASK_DIR] [--log-dir LOG_DIR] [--data-names DATA_NAMES] [--mask-names MASK_NAMES] [--data-types DATA_TYPES]
+                     [--n-target-data N_TARGET_DATA] [--device DEVICE] [--shuffle-masks] [--channel-steps CHANNEL_STEPS] [--lstm-steps LSTM_STEPS] [--gru-steps GRU_STEPS]
+                     [--encoding-layers ENCODING_LAYERS] [--pooling-layers POOLING_LAYERS] [--conv-factor CONV_FACTOR] [--weights WEIGHTS] [--steady-masks STEADY_MASKS]
+                     [--loop-random-seed LOOP_RANDOM_SEED] [--cuda-random-seed CUDA_RANDOM_SEED] [--deterministic] [--attention] [--channel-reduction-rate CHANNEL_REDUCTION_RATE] [--disable-skip-layers]
+                     [--disable-first-bn] [--masked-bn] [--lazy-load] [--global-padding] [--normalize-data] [--n-filters N_FILTERS] [--out-channels OUT_CHANNELS] [--dataset-name DATASET_NAME]
+                     [--min-bounds MIN_BOUNDS] [--max-bounds MAX_BOUNDS] [--profile] [--model-dir MODEL_DIR] [--model-names MODEL_NAMES] [--evaluation-dirs EVALUATION_DIRS] [--eval-names EVAL_NAMES]
+                     [--use-train-stats] [--create-graph] [--plot-results PLOT_RESULTS] [--partitions PARTITIONS] [--maxmem MAXMEM] [--split-outputs] [-f LOAD_FROM_FILE]
+
+options:
+  -h, --help            show this help message and exit
+  --data-root-dir DATA_ROOT_DIR
+                        Root directory containing the climate datasets
+  --mask-dir MASK_DIR   Directory containing the mask datasets
+  --log-dir LOG_DIR     Directory where the log files will be stored
+  --data-names DATA_NAMES
+                        Comma separated list of netCDF files (climate dataset) for training/infilling
+  --mask-names MASK_NAMES
+                        Comma separated list of netCDF files (mask dataset). If None, it extracts the masks from the climate dataset
+  --data-types DATA_TYPES
+                        Comma separated list of variable types, in the same order as data-names and mask-names
+  --n-target-data N_TARGET_DATA
+                        Number of data-names (from last) to be used as target data
+  --device DEVICE       Device used by PyTorch (cuda or cpu)
+  --shuffle-masks       Select mask indices randomly
+  --channel-steps CHANNEL_STEPS
+                        Comma separated number of considered sequences for channeled memory:past_steps,future_steps
+  --lstm-steps LSTM_STEPS
+                        Comma separated number of considered sequences for lstm: past_steps,future_steps
+  --gru-steps GRU_STEPS
+                        Comma separated number of considered sequences for gru: past_steps,future_steps
+  --encoding-layers ENCODING_LAYERS
+                        Number of encoding layers in the CNN
+  --pooling-layers POOLING_LAYERS
+                        Number of pooling layers in the CNN
+  --conv-factor CONV_FACTOR
+                        Number of channels in the deepest layer
+  --weights WEIGHTS     Initialization weight
+  --steady-masks STEADY_MASKS
+                        Comma separated list of netCDF files containing a single mask to be applied to all timesteps. The number of steady-masks must be the same as out-channels
+  --loop-random-seed LOOP_RANDOM_SEED
+                        Random seed for iteration loop
+  --cuda-random-seed CUDA_RANDOM_SEED
+                        Random seed for CUDA
+  --deterministic       Disable cudnn backends for reproducibility
+  --attention           Enable the attention module
+  --channel-reduction-rate CHANNEL_REDUCTION_RATE
+                        Channel reduction rate for the attention module
+  --disable-skip-layers
+                        Disable the skip layers
+  --disable-first-bn    Disable the batch normalization on the first layer
+  --masked-bn           Use masked batch normalization instead of standard BN
+  --lazy-load           Use lazy loading for large datasets
+  --global-padding      Use a custom padding for global dataset
+  --normalize-data      Normalize the input climate data to 0 mean and 1 std
+  --n-filters N_FILTERS
+                        Number of filters for the first/last layer
+  --out-channels OUT_CHANNELS
+                        Number of channels for the output data
+  --dataset-name DATASET_NAME
+                        Name of the dataset for format checking
+  --min-bounds MIN_BOUNDS
+                        Comma separated list of values defining the permitted lower-bound of output values
+  --max-bounds MAX_BOUNDS
+                        Comma separated list of values defining the permitted upper-bound of output values
+  --profile             Profile code using tensorboard profiler
+  --model-dir MODEL_DIR
+                        Directory of the trained models
+  --model-names MODEL_NAMES
+                        Model names
+  --evaluation-dirs EVALUATION_DIRS
+                        Directory where the output files will be stored
+  --eval-names EVAL_NAMES
+                        Prefix used for the output filenames
+  --use-train-stats     Use mean and std from training data for normalization
+  --create-graph        Create a Tensorboard graph of the NN
+  --plot-results PLOT_RESULTS
+                        Create plot images of the results for the comma separated list of time indices
+  --partitions PARTITIONS
+                        Split the climate dataset into several partitions along the time coordinate
+  --maxmem MAXMEM       Maximum available memory in MB (overwrite partitions parameter)
+  --split-outputs       Do not merge the outputs when using multiple models and/or partitions
+  -f LOAD_FROM_FILE, --load-from-file LOAD_FROM_FILE
+                        Load all the arguments from a text file
+```
+
+## Example
+
+An example can be found in the directory `demo`.
+The instructions to run the example are given in the README.md file.
 
 ## License
-For open source projects, say how it is licensed.
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+`CRAI` is licensed under the terms of the BSD 3-Clause license.
+
+## Contributions
+
+`CRAI` is maintained by the Climate Informatics and Technology group at DKRZ (Deutsches Klimarechenzentrum).
+- Previous contributing authors: Naoto Inoue, Christopher Kadow, Stephan Seitz
+- Current contributing authors: Johannes Meuer, Maximilian Witte, Étienne Plésiat.
