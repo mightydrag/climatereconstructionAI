@@ -19,16 +19,33 @@ Software to train/evaluate models to reconstruct missing values in climate data 
 - cartopy>=0.20.2
 - numba>=0.55.1
 
+Use the python version 3.10.20
+
+Install and use mamba following these instructions:
+https://github.com/conda-forge/miniforge
+
 An Anaconda environment with all the required dependencies can be created using `environment.yml`:
 ```bash
-conda env create -f environment.yml
+mamba env create -f environment.yml
 ```
 To activate the environment, use:
 ```bash
-conda activate crai
+mamba activate crai
 ```
 
 `environment-cuda.yml` should be used when working with GPUs using CUDA.
+
+Add the libraries to the bashrc:
+```
+echo 'export LD_LIBRARY_PATH=/home/u/u244085/miniforge3/envs/crai/lib:$LD_LIBRARY_PATH' >> ~/.bashrc
+```
+
+Additionally these packages are required:
+
+- properscoring
+- torch==2.12.1 torchvision==0.27.1
+- spei
+- wandb
 
 ## Installation
 
