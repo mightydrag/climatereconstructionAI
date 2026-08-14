@@ -1,0 +1,36 @@
+--data-root-dir ./data/
+--mask-dir ./data/masks
+
+--model-dir ./model-checkpoints/
+--evaluation-dirs ./evaluations/
+--log-dir ./logs/
+
+--model-dir ./snapshots/ckpt
+--snapshot-dir ./snapshots
+
+--data-names test_file_list.json
+--mask-names mask_file_test_list.json 
+--val-names val_file_list.json 
+--data-types t2m 
+
+--device cuda 
+--n-filters 18
+--n-threads 64
+--n-target-data 0
+--multiple-gpus
+--lr 2e-4
+--out-channels 1
+--dataset-name era5_land_HR
+--eval-format era5_land_HR
+--global-padding
+--encoding-layers 3
+--pooling-layers 0
+--normalize-data
+--eval-names era5_land_t2max_daily_2011_europe_anomalies_ref_1985_2014_lowres_values_in_highres_grid.nc,era5_land_t2max_daily_2012_europe_anomalies_ref_1985_2014_lowres_values_in_highres_grid.nc
+
+#--xrdss-paths test_file_list.json
+--xrdss-paths /work/uo1075/u241308/data_python_PostDoc/BB_challenge/data/era5_land/t2max/lowres_in_highres_grid/anomalies/era5_land_t2max_daily_2000_europe_anomalies_ref_1985_2014_lowres_values_in_highres_grid.nc
+
+#--model-names 225000.pth
+--model-names 125000.pth
+
