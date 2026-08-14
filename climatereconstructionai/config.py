@@ -99,7 +99,7 @@ def eval_args(parser, arg_file=None, prog_func=None):
     global model_dir
 
     evaluation_dirs[0] = f"{evaluation_dirs[0]}/{config_name}/{run_name}"
-    model_dir = f"{model_dir}/{config_name}/{run_name}/ckpt"
+    model_dir = f"{model_dir}"#{config_name}/{run_name}/ckpt" # this needs to commented out to make the demo work
 
     if not os.path.exists(evaluation_dirs[0]):
         os.makedirs(evaluation_dirs[0])
