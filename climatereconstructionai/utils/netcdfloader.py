@@ -41,7 +41,7 @@ class InfiniteSampler(Sampler):
         return iter(self.loop())
 
     def __len__(self):
-        return 2**31
+        return 2 ** 31
 
     def loop(self):
         i = 0
