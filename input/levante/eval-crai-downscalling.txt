@@ -1,0 +1,35 @@
+--data-root-dir ./data/
+--mask-dir ./data/masks
+
+--model-dir ./model-checkpoints/
+--evaluation-dirs ./evaluations/
+--log-dir ./logs/
+
+--model-dir ./snapshots/ckpt
+--snapshot-dir ./snapshots
+
+--data-names t2max/test_file_list.json
+--mask-names t2max/mask_file_list.json 
+--val-names t2max/val_file_list.json 
+--data-types t2m 
+
+--device cuda 
+--n-filters 18
+--n-threads 64
+--n-target-data 0
+--multiple-gpus
+--lr 2e-4
+--out-channels 1
+--dataset-name era5_land_HR
+--eval-format era5_land_HR
+--global-padding
+--encoding-layers 3
+--pooling-layers 0
+--normalize-data
+--eval-names era5_land_t2max_daily_2021_europe_lowres_values_in_highres_grid.nc
+#--xrdss-paths test_file_list.json
+--xrdss-paths /work/uo1075/u244085/trees_in_the_city/data/era5_land/t2max/lowres_in_highres_grid/era5_land_t2max_daily_2022_europe_lowres_values_in_highres_grid.nc
+
+#--model-names 225000.pth
+--model-names best
+

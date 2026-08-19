@@ -1,0 +1,42 @@
+* Number of GPUs:  4
+snapshots//None/None ./logs//None/None
+data root dir ./data/
+Data path ./data/train/
+./data/train/
+./data/masks/
+Data path ./data//val/
+./data//val/
+./data/masks/
+
+********************************************************************************
+*                                                                              *
+*  This is the automated job summary provided by DKRZ.                         *
+*  If you encounter problems, need assistance or have any suggestion, please   *
+*  write an email to                                                           *
+*                                                                              *
+*  --  support@dkrz.de --                                                      *
+*                                                                              *
+*                       We hope you enjoyed the DKRZ supercomputer LEVANTE ... *
+*
+* JobID            : 27023373
+* JobName          : crai-training                                     
+* Account          : uo1075_gpu
+* User             : u244085 (101499), u244 (4101)                     
+* Partition        : gpu
+* QOS              : normal
+* Nodelist         : l50048 (1)                                                
+* Submit date      : 2026-08-17T15:29:14
+* Start time       : 2026-08-17T15:29:16
+* End time         : 2026-08-17T15:47:55
+* Elapsed time     : 00:18:39 (Timelimit=10:00:00)                     
+* Command          : /work/uo1075/u244085/trees_in_the_city/
+*                    Physics-Informed-CNN-Reconstructions/input/slurm-scripts/train-cnn.sh
+* WorkDir          : /work/uo1075/u244085/trees_in_the_city/
+*                    Physics-Informed-CNN-Reconstructions/input/slurm-scripts
+*
+* StepID | JobName      NodeHours    MaxRSS [Byte] (@task)
+* ------------------------------------------------------------------------------
+* batch  | batch             0.31
+* extern | extern            0.31                3816K (0)
+* ------------------------------------------------------------------------------
+

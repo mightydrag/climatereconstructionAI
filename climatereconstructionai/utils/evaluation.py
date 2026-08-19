@@ -300,7 +300,7 @@ def create_outputs(
             ds.attrs["history"] = (
                 "Infilled using CRAI (Climate Reconstruction AI: "
                 "https://github.com/FREVA-CLINT/climatereconstructionAI)\n"
-                + ds.attrs["history"]
+                # + ds.attrs["history"] only if history already exists
             )
             ds.to_netcdf(output_names[rootname][i_model][-1])
 

@@ -34,7 +34,7 @@ def load_steadymask(path, mask_names, data_types, device):
 
 class InfiniteSampler(Sampler):
     def __init__(self, num_samples, data_source=None):
-        super().__init__(data_source)
+        super().__init__()
         self.num_samples = num_samples
 
     def __iter__(self):
@@ -111,18 +111,19 @@ def nc_loadchecker(filename, data_type):
 
 
 def load_netcdf(path, data_names, data_types, keep_dss=False):
+    print(path)
     if data_names is None:
         return None, None, None
     else:
         assert len(data_names) == len(data_types)
         if all(".nc" in data_name or ".h5" in data_name for data_name in data_names):
             data_paths = [
-                ["{}{}".format(path, data_names[i])] for i in range(len(data_names))
+                [os.path.join(path, data_names[i])] for i in range(len(data_names))
             ]
         elif all(".json" in data_name for data_name in data_names):
             data_paths = []
             for data_name in data_names:
-                with open("{}/{}".format(path, data_name)) as json_file:
+                with open(os.path.join(path, data_name)) as json_file:
                     data_paths.append(json.load(json_file))
         else:
             raise ValueError(
@@ -174,17 +175,18 @@ class NetCDFLoader(Dataset):
 
         mask_path = mask_root
         if split == "infill":
-            data_path = "{:s}/test/".format(data_root)
+            data_path = os.path.join(data_root, "test/")
             self.xr_dss, self.img_data, self.img_length, self.img_sizes = load_netcdf(
                 data_path, img_names, data_types, keep_dss=True
             )
         else:
             if split == "train":
-                data_path = "{:s}/train/".format(data_root)
+                data_path = os.path.join(data_root, "train/")
             else:
                 data_path = "{:s}/val/".format(data_root)
                 if not cfg.shuffle_masks:
                     mask_path = "{:s}/val/".format(mask_root)
+            print("Data path", data_path)
             self.img_data, self.img_length, self.img_sizes = load_netcdf(
                 data_path, img_names, data_types
             )
@@ -192,7 +194,8 @@ class NetCDFLoader(Dataset):
         self.mask_data, self.mask_length, _ = load_netcdf(
             mask_path, mask_names, data_types
         )
-
+        print("Mask length",self.mask_length)
+        print("IMG length", self.img_length)
         if self.mask_data is None:
             self.mask_length = self.img_length
         else:

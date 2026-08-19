@@ -9,6 +9,7 @@ import torch.multiprocessing
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+import logging
 
 from . import config as cfg
 from .loss import get_loss
@@ -23,18 +24,26 @@ from .utils.profiler import load_profiler
 
 
 def train(arg_file=None):
+    # Configure logging
+    logging.basicConfig(level=logging.DEBUG, format="%(levelname)s: %(message)s")
+
+    # Log messages
+    logging.debug("This is a debug message (verbose)")
+    logging.info("This is an info message")
+    logging.warning("This is a warning message")
+
     cfg.set_train_args(arg_file)
 
     print("* Number of GPUs: ", torch.cuda.device_count())
 
     torch.multiprocessing.set_sharing_strategy("file_system")
 
-    wandb.init(
-        project="crai-hindcast-pp",
-        name=cfg.run_name,
-        config=cfg.passed_args,
-        dir=cfg.snapshot_dir,
-    )
+    # wandb.init(
+    #     project="crai-hindcast-pp",
+    #     name=cfg.run_name,
+    #     config=cfg.passed_args,
+    #     dir=cfg.snapshot_dir,
+    # )
 
     print(cfg.snapshot_dir, cfg.log_dir)
 
@@ -57,7 +66,7 @@ def train(arg_file=None):
 
     # Save input parameters to a summary file
     save_input_params(cfg, dir=cfg.snapshot_dir)
-
+    print("data root dir", cfg.data_root_dir)
     # create data sets
     dataset_train = NetCDFLoader(
         cfg.data_root_dir,
@@ -213,9 +222,9 @@ def train(arg_file=None):
             writer.update_scalars(val_loss, n_iter, "val")
 
             # Log on to wandb
-            wandb.log({f"train/{k}": v for k, v in train_loss.items()}, step=n_iter)
-            wandb.log({f"val/{k}": v for k, v in val_loss.items()}, step=n_iter)
-            wandb.log({"lr": lr_val}, step=n_iter)
+            # wandb.log({f"train/{k}": v for k, v in train_loss.items()}, step=n_iter)
+            # wandb.log({f"val/{k}": v for k, v in val_loss.items()}, step=n_iter)
+            # wandb.log({"lr": lr_val}, step=n_iter)
 
             if cfg.early_stopping:
                 writer.update_scalar(
@@ -286,7 +295,7 @@ def train(arg_file=None):
     writer.add_visualizations(mask, steady_mask, output, gt, n_iter, "val")
 
     writer.close()
-    wandb.finish()
+    # wandb.finish()
 
 
 if __name__ == "__main__":

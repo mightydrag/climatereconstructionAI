@@ -1,0 +1,48 @@
+Run 'mamba init' to be able to run mamba activate/deactivate
+and start a new shell session. Or use conda to activate/deactivate.
+
+Traceback (most recent call last):
+  File "/sw/spack-levante/mambaforge-22.9.0-2-Linux-x86_64-kptncg/lib/python3.10/runpy.py", line 187, in _run_module_as_main
+    mod_name, mod_spec, code = _get_module_details(mod_name, _Error)
+  File "/sw/spack-levante/mambaforge-22.9.0-2-Linux-x86_64-kptncg/lib/python3.10/runpy.py", line 110, in _get_module_details
+    __import__(pkg_name)
+  File "/work/uo1075/u244085/trees_in_the_city/Physics-Informed-CNN-Reconstructions/climatereconstructionai/__init__.py", line 3, in <module>
+    from .evaluate import evaluate
+  File "/work/uo1075/u244085/trees_in_the_city/Physics-Informed-CNN-Reconstructions/climatereconstructionai/evaluate.py", line 3, in <module>
+    from .model.net import CRAINet
+  File "/work/uo1075/u244085/trees_in_the_city/Physics-Informed-CNN-Reconstructions/climatereconstructionai/model/net.py", line 1, in <module>
+    import torch
+ModuleNotFoundError: No module named 'torch'
+
+********************************************************************************
+*                                                                              *
+*  This is the automated job summary provided by DKRZ.                         *
+*  If you encounter problems, need assistance or have any suggestion, please   *
+*  write an email to                                                           *
+*                                                                              *
+*  --  support@dkrz.de --                                                      *
+*                                                                              *
+*                       We hope you enjoyed the DKRZ supercomputer LEVANTE ... *
+*
+* JobID            : 27020393
+* JobName          : crai-training                                     
+* Account          : uo1075_gpu
+* User             : u244085 (101499), u244 (4101)                     
+* Partition        : gpu
+* QOS              : normal
+* Nodelist         : l50009 (1)                                                
+* Submit date      : 2026-08-17T13:35:57
+* Start time       : 2026-08-17T13:36:00
+* End time         : 2026-08-17T13:36:03
+* Elapsed time     : 00:00:03 (Timelimit=10:00:00)                     
+* Command          : /work/uo1075/u244085/trees_in_the_city/
+*                    Physics-Informed-CNN-Reconstructions/input/slurm-scripts/train-cnn.sh
+* WorkDir          : /work/uo1075/u244085/trees_in_the_city/
+*                    Physics-Informed-CNN-Reconstructions
+*
+* StepID | JobName      NodeHours    MaxRSS [Byte] (@task)
+* ------------------------------------------------------------------------------
+* batch  | batch          0.00083
+* extern | extern         0.00083                3816K (0)
+* ------------------------------------------------------------------------------
+

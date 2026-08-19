@@ -1,6 +1,6 @@
---data-root-dir ../data/
---model-dir ../data/
---model-names 20crtasgn72.pth
+--data-root-dir ../data
+--model-dir ../data
+--model-names 20crtasgn72
 --evaluation-dirs outputs
 --data-names tas_hadcrut_187709_189308.nc
 --data-types tas

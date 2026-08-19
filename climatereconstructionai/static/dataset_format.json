@@ -45,5 +45,14 @@
     "grid": null,
     "step": null,
     "scale": [null, null]
+  },
+
+  "era5_land_HR": {
+    "dimensions": ["time", "latitude", "longitude"],
+    "axes": ["time", "latitude", "longitude"],
+    "grid": [[35,72.1,0.1],[-15,40.1,0.1]],
+    "step": [0.1, 0.1],
+    "scale": [[-3,3],"RdBu_r"]
   }
+
 }

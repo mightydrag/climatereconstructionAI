@@ -1,0 +1,62 @@
+/home/u/u244085/miniforge3/envs/crai/lib/python3.10/runpy.py:126: RuntimeWarning: 'climatereconstructionai.evaluate' found in sys.modules after import of package 'climatereconstructionai', but prior to execution of 'climatereconstructionai.evaluate'; this may result in unpredictable behaviour
+  warn(RuntimeWarning(msg))
+WARNING:root:Incorrect data type for era5_land_t2max_daily_2000_europe_binary_mask.nc.
+Data type has been converted to float32.
+WARNING:root:Incorrect data type for era5_land_t2max_daily_2001_europe_binary_mask.nc.
+Data type has been converted to float32.
+WARNING:root:Incorrect data type for era5_land_t2max_daily_2002_europe_binary_mask.nc.
+Data type has been converted to float32.
+WARNING:root:Incorrect data type for era5_land_t2max_daily_2003_europe_binary_mask.nc.
+Data type has been converted to float32.
+WARNING:root:Incorrect data type for era5_land_t2max_daily_2004_europe_binary_mask.nc.
+Data type has been converted to float32.
+WARNING:root:Incorrect data type for era5_land_t2max_daily_2005_europe_binary_mask.nc.
+Data type has been converted to float32.
+WARNING:root:Incorrect data type for era5_land_t2max_daily_2006_europe_binary_mask.nc.
+Data type has been converted to float32.
+WARNING:root:Incorrect data type for era5_land_t2max_daily_2007_europe_binary_mask.nc.
+Data type has been converted to float32.
+WARNING:root:Incorrect data type for era5_land_t2max_daily_2008_europe_binary_mask.nc.
+Data type has been converted to float32.
+WARNING:root:Incorrect data type for era5_land_t2max_daily_2009_europe_binary_mask.nc.
+Data type has been converted to float32.
+WARNING:root:Incorrect data type for era5_land_t2max_daily_2010_europe_binary_mask.nc.
+Data type has been converted to float32.
+WARNING:root:Incorrect data type for era5_land_t2max_daily_2011_europe_binary_mask.nc.
+Data type has been converted to float32.
+WARNING:root:Incorrect data type for era5_land_t2max_daily_2012_europe_binary_mask.nc.
+Data type has been converted to float32.
+WARNING:root:Incorrect data type for era5_land_t2max_daily_2013_europe_binary_mask.nc.
+Data type has been converted to float32.
+WARNING:root:Incorrect data type for era5_land_t2max_daily_2014_europe_binary_mask.nc.
+Data type has been converted to float32.
+WARNING:root:Incorrect data type for era5_land_t2max_daily_2015_europe_binary_mask.nc.
+Data type has been converted to float32.
+WARNING:root:Incorrect data type for era5_land_t2max_daily_2016_europe_binary_mask.nc.
+Data type has been converted to float32.
+WARNING:root:Incorrect data type for era5_land_t2max_daily_2017_europe_binary_mask.nc.
+Data type has been converted to float32.
+WARNING:root:Incorrect data type for era5_land_t2max_daily_2018_europe_binary_mask.nc.
+Data type has been converted to float32.
+WARNING:root:Incorrect data type for era5_land_t2max_daily_2019_europe_binary_mask.nc.
+Data type has been converted to float32.
+WARNING:root:Incorrect data type for era5_land_t2max_daily_2020_europe_binary_mask.nc.
+Data type has been converted to float32.
+WARNING:root:Incorrect data type for era5_land_t2max_daily_2021_europe_binary_mask.nc.
+Data type has been converted to float32.
+WARNING:root:Incorrect data type for era5_land_t2max_daily_2022_europe_binary_mask.nc.
+Data type has been converted to float32.
+WARNING:root:Incorrect data type for era5_land_t2max_daily_2023_europe_binary_mask.nc.
+Data type has been converted to float32.
+Traceback (most recent call last):
+  File "/home/u/u244085/miniforge3/envs/crai/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/home/u/u244085/miniforge3/envs/crai/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/work/uo1075/u244085/trees_in_the_city/Physics-Informed-CNN-Reconstructions/climatereconstructionai/evaluate.py", line 225, in <module>
+    evaluate()
+  File "/work/uo1075/u244085/trees_in_the_city/Physics-Informed-CNN-Reconstructions/climatereconstructionai/evaluate.py", line 58, in evaluate
+    dataset_val = NetCDFLoader(
+  File "/work/uo1075/u244085/trees_in_the_city/Physics-Informed-CNN-Reconstructions/climatereconstructionai/utils/netcdfloader.py", line 204, in __init__
+    assert self.img_length == self.mask_length
+AssertionError

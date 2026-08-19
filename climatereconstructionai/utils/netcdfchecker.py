@@ -71,7 +71,7 @@ def dataset_formatter(ds, data_type, basename):
         for i in range(2):
             coordinate = cfg.dataset_format["axes"][i + 1]
 
-            step.append(np.unique(np.gradient(ds[data_type][coordinate].values)))
+            step.append(np.unique(np.round(np.gradient(ds[data_type][coordinate].values),decimals=10)))
             if len(step[i]) != 1:
                 raise ValueError(
                     "The {} grid is not uniform in {}.".format(coordinate, basename)

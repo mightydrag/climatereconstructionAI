@@ -1,0 +1,21 @@
+/home/u/u244085/miniforge3/envs/crai/lib/python3.10/runpy.py:126: RuntimeWarning: 'climatereconstructionai.train' found in sys.modules after import of package 'climatereconstructionai', but prior to execution of 'climatereconstructionai.train'; this may result in unpredictable behaviour
+  warn(RuntimeWarning(msg))
+DEBUG: This is a debug message (verbose)
+INFO: This is an info message
+WARNING: This is a warning message
+WARNING: Incorrect data type for era5_land_t2max_daily_2000_europe_binary_mask.nc.
+Data type has been converted to float32.
+WARNING: Incorrect data type for era5_land_t2max_daily_2000_europe_binary_mask.nc.
+Data type has been converted to float32.
+Traceback (most recent call last):
+  File "/home/u/u244085/miniforge3/envs/crai/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/home/u/u244085/miniforge3/envs/crai/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/work/uo1075/u244085/trees_in_the_city/Physics-Informed-CNN-Reconstructions/climatereconstructionai/train.py", line 302, in <module>
+    train()
+  File "/work/uo1075/u244085/trees_in_the_city/Physics-Informed-CNN-Reconstructions/climatereconstructionai/train.py", line 94, in train
+    sampler=InfiniteSampler(len(dataset_train)),
+  File "/work/uo1075/u244085/trees_in_the_city/Physics-Informed-CNN-Reconstructions/climatereconstructionai/utils/netcdfloader.py", line 37, in __init__
+    super().__init__(data_source)
+TypeError: object.__init__() takes exactly one argument (the instance to initialize)

@@ -1,0 +1,24 @@
+/home/u/u244085/miniforge3/envs/crai/lib/python3.10/runpy.py:126: RuntimeWarning: 'climatereconstructionai.evaluate' found in sys.modules after import of package 'climatereconstructionai', but prior to execution of 'climatereconstructionai.evaluate'; this may result in unpredictable behaviour
+  warn(RuntimeWarning(msg))
+Traceback (most recent call last):
+  File "/home/u/u244085/miniforge3/envs/crai/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/home/u/u244085/miniforge3/envs/crai/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/work/uo1075/u244085/trees_in_the_city/Physics-Informed-CNN-Reconstructions/climatereconstructionai/evaluate.py", line 225, in <module>
+    evaluate()
+  File "/work/uo1075/u244085/trees_in_the_city/Physics-Informed-CNN-Reconstructions/climatereconstructionai/evaluate.py", line 58, in evaluate
+    dataset_val = NetCDFLoader(
+  File "/work/uo1075/u244085/trees_in_the_city/Physics-Informed-CNN-Reconstructions/climatereconstructionai/utils/netcdfloader.py", line 194, in __init__
+    self.mask_data, self.mask_length, _ = load_netcdf(
+  File "/work/uo1075/u244085/trees_in_the_city/Physics-Informed-CNN-Reconstructions/climatereconstructionai/utils/netcdfloader.py", line 127, in load_netcdf
+    data_paths.append(json.load(json_file))
+  File "/home/u/u244085/miniforge3/envs/crai/lib/python3.10/json/__init__.py", line 293, in load
+    return loads(fp.read(),
+  File "/home/u/u244085/miniforge3/envs/crai/lib/python3.10/json/__init__.py", line 346, in loads
+    return _default_decoder.decode(s)
+  File "/home/u/u244085/miniforge3/envs/crai/lib/python3.10/json/decoder.py", line 337, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+  File "/home/u/u244085/miniforge3/envs/crai/lib/python3.10/json/decoder.py", line 355, in raw_decode
+    raise JSONDecodeError("Expecting value", s, err.value) from None
+json.decoder.JSONDecodeError: Expecting value: line 4 column 1 (char 122)

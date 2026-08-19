@@ -1,0 +1,20 @@
+/home/u/u244085/miniforge3/envs/crai/lib/python3.10/runpy.py:126: RuntimeWarning: 'climatereconstructionai.evaluate' found in sys.modules after import of package 'climatereconstructionai', but prior to execution of 'climatereconstructionai.evaluate'; this may result in unpredictable behaviour
+  warn(RuntimeWarning(msg))
+Traceback (most recent call last):
+  File "/home/u/u244085/miniforge3/envs/crai/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/home/u/u244085/miniforge3/envs/crai/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/work/uo1075/u244085/trees_in_the_city/Physics-Informed-CNN-Reconstructions/climatereconstructionai/evaluate.py", line 225, in <module>
+    evaluate()
+  File "/work/uo1075/u244085/trees_in_the_city/Physics-Informed-CNN-Reconstructions/climatereconstructionai/evaluate.py", line 48, in evaluate
+    ckpt_dict = load_ckpt(
+  File "/work/uo1075/u244085/trees_in_the_city/Physics-Informed-CNN-Reconstructions/climatereconstructionai/utils/io.py", line 28, in load_ckpt
+    ckpt_dict = torch.load(ckpt_name, map_location=device, weights_only=False)
+  File "/home/u/u244085/miniforge3/envs/crai/lib/python3.10/site-packages/torch/serialization.py", line 1530, in load
+    with _open_file_like(f, "rb") as opened_file:
+  File "/home/u/u244085/miniforge3/envs/crai/lib/python3.10/site-packages/torch/serialization.py", line 795, in _open_file_like
+    return _open_file(name_or_buffer, mode)
+  File "/home/u/u244085/miniforge3/envs/crai/lib/python3.10/site-packages/torch/serialization.py", line 776, in __init__
+    super().__init__(open(name, mode))  # noqa: SIM115
+FileNotFoundError: [Errno 2] No such file or directory: './snapshots/ckpt/125000.pth.pth'

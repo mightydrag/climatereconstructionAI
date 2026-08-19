@@ -1,0 +1,33 @@
+
+********************************************************************************
+*                                                                              *
+*  This is the automated job summary provided by DKRZ.                         *
+*  If you encounter problems, need assistance or have any suggestion, please   *
+*  write an email to                                                           *
+*                                                                              *
+*  --  support@dkrz.de --                                                      *
+*                                                                              *
+*                       We hope you enjoyed the DKRZ supercomputer LEVANTE ... *
+*
+* JobID            : 27024736
+* JobName          : crai-eval                                         
+* Account          : uo1075_gpu
+* User             : u244085 (101499), u244 (4101)                     
+* Partition        : gpu
+* QOS              : normal
+* Nodelist         : l50048 (1)                                                
+* Submit date      : 2026-08-17T16:52:03
+* Start time       : 2026-08-17T16:52:04
+* End time         : 2026-08-17T16:52:39
+* Elapsed time     : 00:00:35 (Timelimit=10:00:00)                     
+* Command          : /work/uo1075/u244085/trees_in_the_city/
+*                    Physics-Informed-CNN-Reconstructions/input/slurm-scripts/eval-cnn.sh
+* WorkDir          : /work/uo1075/u244085/trees_in_the_city/
+*                    Physics-Informed-CNN-Reconstructions
+*
+* StepID | JobName      NodeHours    MaxRSS [Byte] (@task)
+* ------------------------------------------------------------------------------
+* batch  | batch           0.0097
+* extern | extern          0.0097                3816K (0)
+* ------------------------------------------------------------------------------
+

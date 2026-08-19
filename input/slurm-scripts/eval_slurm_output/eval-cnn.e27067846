@@ -1,0 +1,5 @@
+/home/u/u244085/miniforge3/envs/crai/lib/python3.10/runpy.py:126: RuntimeWarning: 'climatereconstructionai.evaluate' found in sys.modules after import of package 'climatereconstructionai', but prior to execution of 'climatereconstructionai.evaluate'; this may result in unpredictable behaviour
+  warn(RuntimeWarning(msg))
+WARNING:root:Incorrect data type for era5_land_t2max_daily_2021_europe_binary_mask.nc.
+Data type has been converted to float32.
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:09<00:00,  9.67s/it]100%|██████████| 1/1 [00:09<00:00,  9.67s/it]

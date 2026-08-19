@@ -1,0 +1,33 @@
+--data-root-dir ./data/
+--mask-dir ./data/masks/
+
+--model-dir ./model-checkpoints/
+--evaluation-dirs ./evaluations/
+--log-dir ./logs/
+
+--data-names t2max/train_file_list.json
+--mask-names t2max/mask_file_list.json
+--val-names t2max/val_file_list.json
+--test-names t2max/est_file_list.json
+--xrdss-paths masks/t2max
+--data-types t2m
+
+--device cuda 
+--n-filters 18
+--n-threads 64
+--n-target-data 0
+--multiple-gpus
+--lr 2e-4
+--out-channels 1
+
+--eval-names demo
+--dataset-name era5_land_HR
+--plot-result 0,100
+--shuffle-masks
+--global-padding
+--encoding-layers 3
+--pooling-layers 0
+--normalize-data
+
+--save-model-interval 25000
+--log-interval 100

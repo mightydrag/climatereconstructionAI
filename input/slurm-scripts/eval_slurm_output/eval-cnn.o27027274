@@ -1,0 +1,42 @@
+./data/test/
+./data/masks
+Mask length (365, 365, 365)
+IMG length (365, 365, 365)
+(365, 365, 365) (365, 365, 365)
+Loading xarray dataset from /work/uo1075/u244085/trees_in_the_city/data/era5_land/t2max/lowres_in_highres_grid/era5_land_t2max_daily_2022_europe_lowres_values_in_highres_grid.nc
+1095
+Shape of sample input: torch.Size([1, 1, 371, 551])
+* Warning! Using mean and std from current data.
+1
+
+********************************************************************************
+*                                                                              *
+*  This is the automated job summary provided by DKRZ.                         *
+*  If you encounter problems, need assistance or have any suggestion, please   *
+*  write an email to                                                           *
+*                                                                              *
+*  --  support@dkrz.de --                                                      *
+*                                                                              *
+*                       We hope you enjoyed the DKRZ supercomputer LEVANTE ... *
+*
+* JobID            : 27027274
+* JobName          : crai-eval                                         
+* Account          : uo1075_gpu
+* User             : u244085 (101499), u244 (4101)                     
+* Partition        : gpu
+* QOS              : normal
+* Nodelist         : l50081 (1)                                                
+* Submit date      : 2026-08-17T18:26:43
+* Start time       : 2026-08-17T18:26:44
+* End time         : 2026-08-17T18:27:42
+* Elapsed time     : 00:00:58 (Timelimit=10:00:00)                     
+* Command          : ../eval-cnn.sh
+* WorkDir          : /work/uo1075/u244085/trees_in_the_city/
+*                    Physics-Informed-CNN-Reconstructions/input/slurm-scripts/eval_slurm_output
+*
+* StepID | JobName      NodeHours    MaxRSS [Byte] (@task)
+* ------------------------------------------------------------------------------
+* batch  | batch            0.016
+* extern | extern           0.016                3816K (0)
+* ------------------------------------------------------------------------------
+
