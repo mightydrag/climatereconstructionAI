@@ -111,7 +111,6 @@ def nc_loadchecker(filename, data_type):
 
 
 def load_netcdf(path, data_names, data_types, keep_dss=False):
-    print(path)
     if data_names is None:
         return None, None, None
     else:
@@ -186,7 +185,6 @@ class NetCDFLoader(Dataset):
                 data_path = "{:s}/val/".format(data_root)
                 if not cfg.shuffle_masks:
                     mask_path = "{:s}/val/".format(mask_root)
-            print("Data path", data_path)
             self.img_data, self.img_length, self.img_sizes = load_netcdf(
                 data_path, img_names, data_types
             )
@@ -194,8 +192,7 @@ class NetCDFLoader(Dataset):
         self.mask_data, self.mask_length, _ = load_netcdf(
             mask_path, mask_names, data_types
         )
-        print("Mask length",self.mask_length)
-        print("IMG length", self.img_length)
+
         if self.mask_data is None:
             self.mask_length = self.img_length
         else:

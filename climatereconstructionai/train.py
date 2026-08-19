@@ -22,6 +22,8 @@ from .utils.save_input_params import save_input_params
 from .utils.netcdfloader import NetCDFLoader, InfiniteSampler, load_steadymask
 from .utils.profiler import load_profiler
 
+# TODOS: Implement run_name und depth_level configs for argument filss
+
 
 def train(arg_file=None):
     # Configure logging
@@ -35,6 +37,7 @@ def train(arg_file=None):
     cfg.set_train_args(arg_file)
 
     print("* Number of GPUs: ", torch.cuda.device_count())
+    print(f"Depth level: {cfg.snapshot_dir}")
 
     torch.multiprocessing.set_sharing_strategy("file_system")
 
@@ -201,7 +204,6 @@ def train(arg_file=None):
         optimizer.step()
 
         if cfg.log_interval and n_iter % cfg.log_interval == 0:
-
             writer.update_scalars(train_loss, n_iter, "train")
 
             model.eval()

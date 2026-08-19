@@ -137,6 +137,9 @@ def global_args(parser, arg_file=None, prog_func=None):
     else:
         skip_layers = 1
 
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+
     global recurrent_steps
     global n_recurrent_steps
     global time_steps
@@ -411,6 +414,12 @@ def set_train_args(arg_file=None):
         help="Comma separated list of netCDF files (climate dataset) for validation",
     )
     arg_parser.add_argument(
+        "--snapshot-dir",
+        type=str,
+        default="snapshots/",
+        help="Parent directory of the training checkpoints and the snapshot images",
+    )
+    arg_parser.add_argument(
         "--resume-iter",
         type=int,
         help="Iteration step from which the training will be resumed",
@@ -590,6 +599,12 @@ def set_evaluate_args(arg_file=None, prog_func=None):
         help="Format for eval output files, if different from training",
     )
     arg_parser.add_argument(
+        "--eval-member",
+        type=str,
+        default="r2i8p4",
+        help="Ensemble member for evaluation",
+    )
+    arg_parser.add_argument(
         "--evaluation-dirs",
         type=str_list,
         default="evaluation/",
@@ -600,6 +615,12 @@ def set_evaluate_args(arg_file=None, prog_func=None):
         type=str_list,
         default="output",
         help="Prefix used for the output filenames",
+    )
+    arg_parser.add_argument(
+        "--depth",
+        type=int,
+        default=None,
+        help="if single depth dimension training wanted, specification of depth level ",
     )
     arg_parser.add_argument(
         "--use-train-stats",

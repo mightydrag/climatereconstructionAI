@@ -55,6 +55,7 @@ def evaluate(arg_file=None, prog_func=None):
         else:
             data_stats = None
 
+        print(cfg.data_root_dir, cfg.data_names)
         dataset_val = NetCDFLoader(
             cfg.data_root_dir,
             cfg.data_names,
@@ -137,7 +138,7 @@ def evaluate(arg_file=None, prog_func=None):
 
     for name in output_names:
         if len(output_names[name]) == 1 and len(output_names[name][1]) == 1:
-            os.rename(output_names[name][1][0], f"{name}.nc")
+            os.rename(output_names[name][1][0], name + ".nc")
         else:
             if not cfg.split_outputs:
                 dss = []

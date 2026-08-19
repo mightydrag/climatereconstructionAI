@@ -112,7 +112,12 @@ def get_xr_dss(xr_dss_paths, data_types):
         ds = xr.load_dataset(path, decode_times=True)
 
         # Adjust the depth dimension for both ds and ds1
-        # ds = ds.isel(depth=slice(0, cfg.out_channels))
+        if type(cfg.depth) == int:
+            print("depth: ", cfg.depth)
+            ds = ds.isel(depth=slice(cfg.depth, cfg.depth + 1))
+        else:
+            print("out_channels: ", cfg.out_channels)
+            ds = ds.isel(depth=slice(0, cfg.out_channels))
         ds1 = ds.copy()
 
         # ds = ds.drop_vars(data_types[i])
@@ -242,35 +247,16 @@ def create_outputs(
         cnames = ["gt", "output"]
         pnames = ["gt", "output"]
 
-    split_data = []
-    for cname in cnames:
-
-        if cfg.normalize_data and cname != "mask":
-            for k in range(data_dict[cname].shape[1]):
-                data_dict[cname][:, k, :, :] = renormalize(
-                    data_dict[cname][:, k, :, :],
-                    data_stats["mean"][k],
-                    data_stats["std"][k],
-                )
-
-        # Split data_dict[cname] along axis 0
-        split_arrays = np.array_split(
-            data_dict[cname].squeeze().to(torch.device("cpu")).detach().numpy(),
-            len(eval_path),
-            axis=0,
-        )
-        split_data.append(split_arrays)
-
     for j in range(len(eval_path)):
 
-        if len(cfg.data_types) > 1:
-            i_data = -cfg.n_target_data + j
-        else:
-            i_data = 0
+        i_data = -cfg.n_target_data + j
         data_type = cfg.data_types[i_data]
 
-        for c, cname in enumerate(cnames):
-            rootname = f"{eval_path[j]}_ly{cfg.lead_year}_{cname}"
+        for cname in cnames:
+
+            print(data_dict[cname].shape)
+
+            rootname = "{}_{}".format(eval_path[j], cname)
             if rootname not in output_names:
                 output_names[rootname] = {}
 
@@ -282,15 +268,16 @@ def create_outputs(
             ds = xr_dss[i_data][1].copy()
 
             ds[data_type] = xr.DataArray(
-                split_data[c][j],
+                data_dict[cname].to(torch.device("cpu")).detach().numpy(),
                 dims=xr_dss[i_data][2],
                 coords=xr_dss[i_data][3],
             )
-            ds["time"] = xr_dss[i_data][0]["time"]
+            ds["time"] = xr_dss[i_data][0]["time"].values[index]
 
             ds = reformat_dataset(
                 xr_dss[i_data][0], ds, data_type, format_name=cfg.eval_format
             )
+
             # for var in xr_dss[i_data][0].keys():
             #     if "time" in xr_dss[i_data][0][var].dims:
             #         ds[var] = xr_dss[i_data][0][var].isel(time=index)
