@@ -182,7 +182,7 @@ class NetCDFLoader(Dataset):
         ds_index = 0
         current_index = 0
         for l in range(len(self.img_length)):
-            if index > current_index + self.img_length[l]:
+            if index >= current_index + self.img_length[l]:
                 current_index += self.img_length[l]
                 ds_index += 1
         index -= current_index
@@ -215,7 +215,7 @@ class NetCDFLoader(Dataset):
         images = torch.stack([images], dim=1)
         masks = torch.stack([masks], dim=1)
 
-        return images, masks
+        return images, masks, ds_index
 
     def __getitem__(self, index):
 
@@ -223,10 +223,11 @@ class NetCDFLoader(Dataset):
         masks = []
         masked = []
         ndata = len(self.data_types)
+        ds_index = 0
 
         for i in range(ndata):
 
-            image, mask = self.get_single_item(i, index, cfg.shuffle_masks)
+            image, mask, ds_index = self.get_single_item(i, index, cfg.shuffle_masks)
 
             if i >= ndata - cfg.n_target_data:
                 images.append(image)
@@ -238,9 +239,9 @@ class NetCDFLoader(Dataset):
 
         if cfg.channel_steps:
             return torch.cat(masked, dim=0).transpose(0, 1), torch.cat(masks, dim=0) \
-                .transpose(0, 1), torch.cat(images, dim=0).transpose(0, 1), index
+                .transpose(0, 1), torch.cat(images, dim=0).transpose(0, 1), index, ds_index
         else:
-            return torch.cat(masked, dim=1), torch.cat(masks, dim=1), torch.cat(images, dim=1), index
+            return torch.cat(masked, dim=1), torch.cat(masks, dim=1), torch.cat(images, dim=1), index, ds_index
 
     def __len__(self):
         return sum(self.img_length)

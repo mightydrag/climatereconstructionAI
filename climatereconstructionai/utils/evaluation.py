@@ -104,7 +104,7 @@ def infill(model, dataset, eval_path, output_names, data_stats, xr_dss, i_model)
 
     for split in tqdm(range(dataset.__len__())):
         # TODO: implement evaluation for multiple data paths
-        data_dict["image"], data_dict["mask"], data_dict["gt"], index = next(dataset)
+        data_dict["image"], data_dict["mask"], data_dict["gt"], index, ds_index = next(dataset)
 
         if split == 0 and cfg.create_graph:
             writer = SummaryWriter(log_dir=cfg.log_dir)
@@ -131,7 +131,7 @@ def infill(model, dataset, eval_path, output_names, data_stats, xr_dss, i_model)
 
         data_dict["image"] /= data_dict["mask"]
 
-        create_outputs(data_dict, eval_path, output_names, data_stats, xr_dss, i_model, split, index)
+        create_outputs(data_dict, eval_path, output_names, data_stats, xr_dss, i_model, split, index, ds_index=ds_index)
 
         if cfg.progress_fwd is not None:
             cfg.progress_fwd[0]('Infilling...',
@@ -157,6 +157,9 @@ def create_outputs(data_dict, eval_path, output_names, data_stats, xr_dss, i_mod
         i_data = -cfg.n_target_data + j
         data_type = cfg.data_types[i_data]
 
+        img_lengths = [len(xr_dss[i_data][k][0]["time"]) for k in range(len(xr_dss[i_data]))]
+        ds_offset = int(sum(img_lengths[:ds_index])) if ds_index > 0 else 0
+        local_index = (index - ds_offset) if hasattr(index, '__sub__') else index
         for cname in cnames:
 
             rootname = '{}_{}'.format(eval_path[j], cname)
@@ -176,13 +179,13 @@ def create_outputs(data_dict, eval_path, output_names, data_stats, xr_dss, i_mod
 
             ds[data_type] = xr.DataArray(data_dict[cname].to(torch.device('cpu')).detach().numpy()[:, j, :, :],
                                          dims=xr_dss[i_data][ds_index][2], coords=xr_dss[i_data][ds_index][3])
-            ds["time"] = xr_dss[i_data][ds_index][0]["time"].values[index]
+            ds["time"] = xr_dss[i_data][ds_index][0]["time"].values[local_index]
 
             ds = reformat_dataset(xr_dss[i_data][ds_index][0], ds, data_type)
 
             for var in xr_dss[i_data][ds_index][0].keys():
                 if "time" in xr_dss[i_data][ds_index][0][var].dims:
-                    ds[var] = xr_dss[i_data][ds_index][0][var].isel(time=index)
+                    ds[var] = xr_dss[i_data][ds_index][0][var].isel(time=local_index)
                 else:
                     ds[var] = xr_dss[i_data][ds_index][0][var]
 
