@@ -1,6 +1,7 @@
 
 logs
 .idea
+Processing_code/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -21,6 +22,6 @@ evaluations/*
 *.nc
 
 # Slurm log files
-*.e
-*.o
+*.e*
+*.o*
 Processing_code/goratz_code/path+file
