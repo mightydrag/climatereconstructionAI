@@ -66,6 +66,22 @@ def evaluate(arg_file=None, prog_func=None):
             cfg.time_steps,
             data_stats,
         )
+        # ---- investigation block ----
+        print("=== dataset structure ===")
+        print("len(dataset):", len(dataset_val))                 # total timesteps = sum(img_length)
+        print("img_length:", dataset_val.img_length)              # per-file lengths
+        print("type img_length:", type(dataset_val.img_length).__name__)
+
+        xr_dss = dataset_val.xr_dss
+        print("num data types:", len(xr_dss))
+        for i_data, file_list in enumerate(xr_dss):
+            print(f"  i_data={i_data}: {len(file_list)} file(s)")
+            for k, entry in enumerate(file_list):
+                # entry shape depends on your version: either a dict or a list
+                ds = entry["ds"] if isinstance(entry, dict) else entry[0]
+                print(f"    file {k}: time size = {len(ds['time'])}, "
+                    f"time range = {ds['time'].values[0]} .. {ds['time'].values[-1]}")
+        print("=== /dataset structure ===")
 
         xrdss = get_xr_dss(cfg.xrdss_paths, cfg.data_types)
 
@@ -126,6 +142,9 @@ def evaluate(arg_file=None, prog_func=None):
                     num_workers=0,
                 )
             )
+            print(" iterator_val", iterator_val)
+            print("Len Dataset_val",len(dataset_val))
+            print("Dataset_val:",dataset_val)
             infill(
                 model,
                 iterator_val,

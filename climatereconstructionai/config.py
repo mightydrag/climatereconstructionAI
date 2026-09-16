@@ -99,7 +99,7 @@ def eval_args(parser, arg_file=None, prog_func=None):
     global model_dir
 
     evaluation_dirs[0] = f"{evaluation_dirs[0]}/{config_name}/{run_name}"
-    model_dir = f"{model_dir}"#{config_name}/{run_name}/ckpt" # this needs to commented out to make the demo work
+    model_dir = f"{model_dir}/{config_name}/{run_name}/ckpt" # this needs to commented out to make the demo work
 
     if not os.path.exists(evaluation_dirs[0]):
         os.makedirs(evaluation_dirs[0])
@@ -137,8 +137,6 @@ def global_args(parser, arg_file=None, prog_func=None):
     else:
         skip_layers = 1
 
-    if not os.path.exists(log_dir):
-        os.makedirs(log_dir)
 
     global recurrent_steps
     global n_recurrent_steps
@@ -182,8 +180,8 @@ def global_args(parser, arg_file=None, prog_func=None):
     global log_dir
     global snapshot_dir
 
-    log_dir += f"/{config_name}/{run_name}"
-    snapshot_dir += f"/{config_name}/{run_name}"
+    log_dir = os.path.join(log_dir,f"{config_name}/{run_name}")
+    snapshot_dir = os.path.join(snapshot_dir, f"{config_name}/{run_name}")
 
     if not os.path.exists(snapshot_dir):
         os.makedirs(snapshot_dir)
@@ -311,8 +309,7 @@ def set_common_args():
         "--steady-masks",
         type=str_list,
         default=None,
-        help="Comma separated list of netCDF files containing a single mask to be applied "
-        "to all timesteps. The number of steady-masks must be the same as out-channels",
+        help="Comma separated list of netCDF files containing a single mask to be applied to all timesteps. The number of steady-masks must be the same as out-channels",
     )
     arg_parser.add_argument(
         "--loop-random-seed",

@@ -14,6 +14,7 @@ class ValidLoss(nn.Module):
         output = data_dict['output']
         gt = data_dict['gt']
         mask = data_dict['mask']
+        loss_mask = data_dict['loss_mask']
 
         # calculate loss for all channels
         for channel in range(output.shape[1]):
@@ -23,5 +24,11 @@ class ValidLoss(nn.Module):
             output_ch = torch.unsqueeze(output[:, channel, :, :], dim=1)
 
             # define different loss functions from output and output_comp
-            loss_dict['valid'] += self.l1(mask_ch * output_ch, mask_ch * gt_ch)
+            if loss_mask is not None:
+                loss_mask_ch = torch.unsqueeze(loss_mask[:, channel, :, :], dim=1)
+                combined_hole_mask_ch = mask_ch * loss_mask_ch
+                loss_dict['valid'] += self.l1(combined_hole_mask_ch * output_ch, combined_hole_mask_ch * gt_ch)
+            else:
+                loss_dict['valid'] += self.l1(mask_ch * output_ch, mask_ch * gt_ch)
+            
         return loss_dict

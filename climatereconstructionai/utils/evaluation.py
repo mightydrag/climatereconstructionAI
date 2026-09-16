@@ -115,9 +115,11 @@ def get_xr_dss(xr_dss_paths, data_types):
         if type(cfg.depth) == int:
             print("depth: ", cfg.depth)
             ds = ds.isel(depth=slice(cfg.depth, cfg.depth + 1))
-        else:
+        elif 'depth' in ds.dims:
             print("out_channels: ", cfg.out_channels)
             ds = ds.isel(depth=slice(0, cfg.out_channels))
+        else:
+            print("No depth dimension for xrdss!")
         ds1 = ds.copy()
 
         # ds = ds.drop_vars(data_types[i])
@@ -193,8 +195,27 @@ def infill(model, dataset, eval_path, output_names, data_stats, xr_dss, i_model)
             data_dict[key] = data_dict[key][:, cfg.gt_channels, :, :]
 
         if steady_mask is not None:
+            
             for key in ("image", "gt", "output"):
-                data_dict[key][:, :, steady_mask.type(torch.bool)] = np.nan
+                # Identify and drop the time dimension (size 365)
+                if steady_mask.dim() == 3:
+                    if steady_mask.shape[0] == 365:
+                        spatial_mask = steady_mask[0]  # time first
+                    elif steady_mask.shape[1] == 365:
+                        spatial_mask = steady_mask[:, 0, :]  # time middle
+                    elif steady_mask.shape[2] == 365:
+                        spatial_mask = steady_mask[:, :, 0]  # time last
+                    else:
+                        spatial_mask = steady_mask
+                else:
+                    spatial_mask = steady_mask
+
+                print("in infill:")
+                print(spatial_mask.shape)
+                print(spatial_mask.type(torch.bool))
+                print(data_dict[key].shape)
+                print(data_dict[key])
+                data_dict[key][:, cfg.gt_channels, spatial_mask.type(torch.bool)] = np.nan
 
         data_dict["infilled"] = 1 - data_dict["mask"]
         data_dict["infilled"] *= data_dict["output"]
@@ -253,6 +274,7 @@ def create_outputs(
         data_type = cfg.data_types[i_data]
 
         for cname in cnames:
+            print("Cname", cname)
 
             print(data_dict[cname].shape)
 
@@ -266,9 +288,12 @@ def create_outputs(
             output_names[rootname][i_model] += [rootname + suffix + ".nc"]
 
             ds = xr_dss[i_data][1].copy()
-
+            print("dim:", data_dict[cname].to(torch.device("cpu")).detach().numpy().shape)
+            print("dim xr dss2: ", xr_dss[i_data][2])
+            print("dim xr dss2: ", )
+            print("dim xr dss3: ", xr_dss[i_data][3])
             ds[data_type] = xr.DataArray(
-                data_dict[cname].to(torch.device("cpu")).detach().numpy(),
+                data_dict[cname].to(torch.device("cpu")).detach().numpy()[:, j, :, :],
                 dims=xr_dss[i_data][2],
                 coords=xr_dss[i_data][3],
             )

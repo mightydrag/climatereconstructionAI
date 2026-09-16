@@ -15,6 +15,7 @@ class HoleLoss(nn.Module):
         output = data_dict['output']
         gt = data_dict['gt']
         mask = data_dict['mask']
+        loss_mask = data_dict['loss_mask']
 
         # calculate loss for all channels
         for channel in range(output.shape[1]):
@@ -22,7 +23,13 @@ class HoleLoss(nn.Module):
             mask_ch = torch.unsqueeze(mask[:, channel, :, :], dim=1)
             gt_ch = torch.unsqueeze(gt[:, channel, :, :], dim=1)
             output_ch = torch.unsqueeze(output[:, channel, :, :], dim=1)
-
+    
+            if loss_mask is not None:
+                loss_mask_ch = torch.unsqueeze(loss_mask[:, channel, :, :], dim=1)
+                combined_hole_mask_ch = (1 - mask_ch) * loss_mask_ch
+                loss_dict['hole'] += self.l1(combined_hole_mask_ch * output_ch, combined_hole_mask_ch * gt_ch)
+            else:
+                loss_dict['hole'] += self.l1((1 - mask_ch) * output_ch, (1 - mask_ch) * gt_ch)
             # define different loss functions from output and output_comp
-            loss_dict['hole'] += self.l1((1 - mask_ch) * output_ch, (1 - mask_ch) * gt_ch)
+
         return loss_dict

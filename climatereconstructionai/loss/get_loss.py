@@ -12,13 +12,10 @@ def prepare_data_dict(img_mask, loss_mask, output, gt, tensor_keys):
     data_dict = dict(zip(list(tensor_keys),[None]*len(tensor_keys)))
 
     mask = img_mask
-    loss_mask = img_mask
-    if loss_mask is not None:
-        mask += loss_mask
-        mask[mask < 0] = 0
-        mask[mask > 1] = 1
-        assert ((mask == 0) | (mask == 1)).all(), "Not all values in mask are zeros or ones!"
-
+    #     mask = mask * loss_mask
+    #     mask[mask < 0] = 0
+    #     mask[mask > 1] = 1
+    #     assert ((mask == 0) | (mask == 1)).all(), "Not all values in mask are zeros or ones!"
     output = output[:, cfg.recurrent_steps, :, :, :]
     mask = mask[:, cfg.recurrent_steps, :, :, :]
     gt = gt[:, cfg.recurrent_steps, cfg.gt_channels, :, :]
@@ -27,8 +24,20 @@ def prepare_data_dict(img_mask, loss_mask, output, gt, tensor_keys):
     data_dict['output'] = output
     data_dict['gt'] = gt
 
+    if loss_mask is not None:
+        # Add batch and channels dimensions to loss_mask
+        # Shape: (1, time, 1, latitude, longitude)
+        loss_mask = loss_mask.unsqueeze(0).unsqueeze(2)
+        loss_mask = loss_mask[:, cfg.recurrent_steps, :, :, :]
+        data_dict['loss_mask'] = loss_mask
+    else:
+        data_dict['loss_mask'] = None
+
     if 'comp' in tensor_keys:
-        data_dict['comp'] = mask * gt + (1 - mask) * output
+        if  loss_mask is not None:
+            data_dict['comp'] = mask * loss_mask * gt + (1 - mask) * loss_mask * output
+        else:
+            data_dict['comp'] = mask * gt + (1 - mask) * output
 
     return data_dict
 
