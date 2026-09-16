@@ -19,3 +19,8 @@ evaluations/*
 *.jpg
 *.png
 *.nc
+
+# Slurm log files
+*.e
+*.o
+Processing_code/goratz_code/path+file
