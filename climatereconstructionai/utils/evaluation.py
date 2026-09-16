@@ -210,12 +210,7 @@ def infill(model, dataset, eval_path, output_names, data_stats, xr_dss, i_model)
                 else:
                     spatial_mask = steady_mask
 
-                print("in infill:")
-                print(spatial_mask.shape)
-                print(spatial_mask.type(torch.bool))
-                print(data_dict[key].shape)
-                print(data_dict[key])
-                data_dict[key][:, cfg.gt_channels, spatial_mask.type(torch.bool)] = np.nan
+                data_dict[key][:, cfg.gt_channels, (spatial_mask == 0).type(torch.bool)] = np.nan
 
         data_dict["infilled"] = 1 - data_dict["mask"]
         data_dict["infilled"] *= data_dict["output"]
@@ -288,10 +283,6 @@ def create_outputs(
             output_names[rootname][i_model] += [rootname + suffix + ".nc"]
 
             ds = xr_dss[i_data][1].copy()
-            print("dim:", data_dict[cname].to(torch.device("cpu")).detach().numpy().shape)
-            print("dim xr dss2: ", xr_dss[i_data][2])
-            print("dim xr dss2: ", )
-            print("dim xr dss3: ", xr_dss[i_data][3])
             ds[data_type] = xr.DataArray(
                 data_dict[cname].to(torch.device("cpu")).detach().numpy()[:, j, :, :],
                 dims=xr_dss[i_data][2],
