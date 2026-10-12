@@ -3,13 +3,20 @@ from torchvision import transforms
 from .. import config as cfg
 
 
+def _flatten_img_data(entry):
+    if isinstance(entry, (list, tuple)):
+        return np.concatenate([np.ravel(np.asarray(item)) for item in entry])
+    return np.asarray(entry)
+
+
 def img_normalization(img_data, train_stats):
     img_std, img_mean, img_znorm = [], [], []
     if cfg.normalize_data:
         for i in range(len(img_data)):
             if train_stats is None:
-                img_mean.append(np.nanmean(np.array(img_data[i])))
-                img_std.append(np.nanstd(np.array(img_data[i])))
+                data = _flatten_img_data(img_data[i])
+                img_mean.append(np.nanmean(data))
+                img_std.append(np.nanstd(data))
             else:
                 img_mean.append(train_stats["mean"][i])
                 img_std.append(train_stats["std"][i])
