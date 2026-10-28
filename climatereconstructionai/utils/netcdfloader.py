@@ -193,7 +193,7 @@ class NetCDFLoader(Dataset):
             )
 
         self.mask_data, self.mask_length, _ = load_netcdf(
-            mask_path, mask_names, _mask_data_types(mask_names, data_types)
+            mask_path, mask_names, data_types[: len(mask_names)]
         )
 
         if self.mask_data is None:
