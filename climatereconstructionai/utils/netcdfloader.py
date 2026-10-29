@@ -13,19 +13,22 @@ from .normalizer import img_normalization, bnd_normalization
 from .. import config as cfg
 
 
+def _mask_data_types(mask_names, data_types):
+    if len(mask_names) == len(data_types):
+        return data_types
+    if cfg.n_target_data == 0:
+        return data_types[: len(mask_names)]
+    return data_types[-len(mask_names) :]
+
+
 def load_steadymask(path, mask_names, data_types, device):
     if mask_names is None:
         return None
     else:
         assert len(mask_names) == cfg.out_channels
-        if cfg.n_target_data == 0:
-            steady_mask = load_netcdf(path, mask_names, data_types[: cfg.out_channels])[
-                0
-            ]
-        else:
-            steady_mask = load_netcdf(
-                path, mask_names, data_types[-cfg.n_target_data :]
-            )[0]
+        steady_mask = load_netcdf(
+            path, mask_names, _mask_data_types(mask_names, data_types)
+        )[0]
         # stack + squeeze ensures that it works with steady masks with one timestep or no timestep
         return torch.stack(
             [torch.from_numpy(np.array(mask)).to(device) for mask in steady_mask]
@@ -190,7 +193,7 @@ class NetCDFLoader(Dataset):
             )
 
         self.mask_data, self.mask_length, _ = load_netcdf(
-            mask_path, mask_names, data_types
+            mask_path, mask_names, data_types[: len(mask_names)]
         )
 
         if self.mask_data is None:
@@ -213,8 +216,9 @@ class NetCDFLoader(Dataset):
             image = np.array(self.img_data[ind_data][mask_ds_index][mask_indices])
             mask = torch.from_numpy((1 - (np.isnan(image))).astype(image.dtype))
         else:
+            mask_index = min(ind_data, len(self.mask_data) - 1)
             mask = torch.from_numpy(
-                np.array(self.mask_data[ind_data][mask_ds_index][mask_indices])
+                np.array(self.mask_data[mask_index][mask_ds_index][mask_indices])
             )
         image = np.array(self.img_data[ind_data][ds_index][img_indices])
         image = torch.from_numpy(np.nan_to_num(image))
