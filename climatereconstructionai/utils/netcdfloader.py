@@ -216,8 +216,9 @@ class NetCDFLoader(Dataset):
             image = np.array(self.img_data[ind_data][mask_ds_index][mask_indices])
             mask = torch.from_numpy((1 - (np.isnan(image))).astype(image.dtype))
         else:
+            mask_index = min(ind_data, len(self.mask_data) - 1)
             mask = torch.from_numpy(
-                np.array(self.mask_data[ind_data][mask_ds_index][mask_indices])
+                np.array(self.mask_data[mask_index][mask_ds_index][mask_indices])
             )
         image = np.array(self.img_data[ind_data][ds_index][img_indices])
         image = torch.from_numpy(np.nan_to_num(image))
