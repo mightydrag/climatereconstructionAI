@@ -202,6 +202,10 @@ options:
                         Comma separated list of lambda factors (key) followed by their corresponding values.Overrides the loss_criterion pre-setting
   --precip-loss-alpha PRECIP_LOSS_ALPHA
                         Weight boost factor for wet pixels in the precipitation loss (used with loss-criterion 4)
+  --bern-pos-weight BERN_POS_WEIGHT
+                        Weight for wet pixels in the Bernoulli (rain occurrence) loss
+  --bern-threshold BERN_THRESHOLD
+                        Threshold on the (normalized) target above which a pixel counts as wet in the Bernoulli loss
   --val-metrics VAL_METRICS
                         Comma separated list of metrics that are evaluated on the val dataset at log-interval
   --tensor-plots TENSOR_PLOTS

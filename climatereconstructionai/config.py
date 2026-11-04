@@ -77,6 +77,7 @@ def set_lambdas():
     elif loss_criterion == 4:
         lambda_dict["valid"] = 1.0
         lambda_dict["precip"] = 6.0
+        lambda_dict["bern"] = 1.0
         lambda_dict["tv"] = 0.1
         lambda_dict["prc"] = 0.05
         lambda_dict["style"] = 120.0
@@ -521,6 +522,19 @@ def set_train_args(arg_file=None):
         default=1.0,
         help="Weight boost factor for wet pixels in the precipitation loss "
         "(used with loss-criterion 4)",
+    )
+    arg_parser.add_argument(
+        "--bern-pos-weight",
+        type=float,
+        default=1.0,
+        help="Weight for wet pixels in the Bernoulli (rain occurrence) loss",
+    )
+    arg_parser.add_argument(
+        "--bern-threshold",
+        type=float,
+        default=0.0,
+        help="Threshold on the (normalized) target above which a pixel counts "
+        "as wet in the Bernoulli loss",
     )
     arg_parser.add_argument(
         "--val-metrics",
