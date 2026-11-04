@@ -74,6 +74,13 @@ def set_lambdas():
     elif loss_criterion == 3:
         lambda_dict["valid"] = 1.0
 
+    elif loss_criterion == 4:
+        lambda_dict["valid"] = 1.0
+        lambda_dict["precip"] = 6.0
+        lambda_dict["tv"] = 0.1
+        lambda_dict["prc"] = 0.05
+        lambda_dict["style"] = 120.0
+
     if lambda_loss is not None:
         lambda_dict.update(lambda_loss)
 
@@ -479,7 +486,8 @@ def set_train_args(arg_file=None):
         type=int,
         default=0,
         help="Index defining the loss function "
-        "(0=original from Liu et al., 1=MAE of the hole region)",
+        "(0=original from Liu et al., 1=MAE of the hole region, "
+        "4=precipitation-weighted hole loss)",
     )
     arg_parser.add_argument(
         "--eval-timesteps",
@@ -506,6 +514,13 @@ def set_train_args(arg_file=None):
         default=None,
         help="Comma separated list of lambda factors (key) followed by their corresponding values."
         "Overrides the loss_criterion pre-setting",
+    )
+    arg_parser.add_argument(
+        "--precip-loss-alpha",
+        type=float,
+        default=1.0,
+        help="Weight boost factor for wet pixels in the precipitation loss "
+        "(used with loss-criterion 4)",
     )
     arg_parser.add_argument(
         "--val-metrics",

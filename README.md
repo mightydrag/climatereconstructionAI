@@ -192,7 +192,7 @@ options:
   --final-models-interval FINAL_MODELS_INTERVAL
                         Iteration step interval at which the final models should be saved
   --loss-criterion LOSS_CRITERION
-                        Index defining the loss function (0=original from Liu et al., 1=MAE of the hole region)
+                        Index defining the loss function (0=original from Liu et al., 1=MAE of the hole region, 4=precipitation-weighted hole loss)
   --eval-timesteps EVAL_TIMESTEPS
                         Sample indices for which a snapshot is created at each iter defined by log-interval
   -f LOAD_FROM_FILE, --load-from-file LOAD_FROM_FILE
@@ -200,6 +200,8 @@ options:
   --vlim VLIM           Comma separated list of vmin,vmax values for the color scale of the snapshot images
   --lambda-loss LAMBDA_LOSS
                         Comma separated list of lambda factors (key) followed by their corresponding values.Overrides the loss_criterion pre-setting
+  --precip-loss-alpha PRECIP_LOSS_ALPHA
+                        Weight boost factor for wet pixels in the precipitation loss (used with loss-criterion 4)
   --val-metrics VAL_METRICS
                         Comma separated list of metrics that are evaluated on the val dataset at log-interval
   --tensor-plots TENSOR_PLOTS

@@ -2,6 +2,7 @@ import torch
 
 from .feature_loss import FeatureLoss
 from .hole_loss import HoleLoss
+from .precip_loss import PrecipLoss
 from .total_variation_loss import TotalVariationLoss
 from .valid_loss import ValidLoss
 from .. import config as cfg
@@ -64,6 +65,10 @@ class loss_criterion(torch.nn.Module):
                 elif loss == 'hole':
                     self.criterions.append(HoleLoss().to(cfg.device))
                     self.tensors.append('hole')
+
+                elif loss == 'precip':
+                    self.criterions.append(PrecipLoss(getattr(cfg, 'precip_loss_alpha', 1.0)).to(cfg.device))
+                    self.tensors.append('precip')
 
                 elif loss == 'tv':
                     self.criterions.append(TotalVariationLoss().to(cfg.device))
