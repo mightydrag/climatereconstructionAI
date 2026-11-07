@@ -154,6 +154,10 @@ options:
   --lazy-load           Use lazy loading for large datasets
   --global-padding      Use a custom padding for global dataset
   --normalize-data      Normalize the input climate data to 0 mean and 1 std
+  --precip-log-transform
+                        Apply log1p to precipitation data types before normalization (reduces skewness of the precipitation distribution)
+  --precip-log-names PRECIP_LOG_NAMES
+                        Comma separated data type names treated as precipitation for --precip-log-transform
   --n-filters N_FILTERS
                         Number of filters for the first/last layer
   --out-channels OUT_CHANNELS
@@ -273,6 +277,10 @@ options:
   --lazy-load           Use lazy loading for large datasets
   --global-padding      Use a custom padding for global dataset
   --normalize-data      Normalize the input climate data to 0 mean and 1 std
+  --precip-log-transform
+                        Apply log1p to precipitation data types before normalization (reduces skewness of the precipitation distribution)
+  --precip-log-names PRECIP_LOG_NAMES
+                        Comma separated data type names treated as precipitation for --precip-log-transform
   --n-filters N_FILTERS
                         Number of filters for the first/last layer
   --out-channels OUT_CHANNELS

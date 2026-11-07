@@ -9,7 +9,7 @@ from torch.utils.data import Dataset, Sampler
 from IPython import embed
 
 from .netcdfchecker import dataset_formatter
-from .normalizer import img_normalization, bnd_normalization
+from .normalizer import img_normalization, bnd_normalization, is_precip_data_type, precip_log_transform
 from .. import config as cfg
 
 
@@ -200,6 +200,13 @@ class NetCDFLoader(Dataset):
                 print(self.mask_length, self.img_length)
                 assert self.img_length == self.mask_length
 
+        if getattr(cfg, "precip_log_transform", False):
+            for i in range(len(self.img_data)):
+                if is_precip_data_type(self.data_types[i]):
+                    self.img_data[i] = [
+                        np.log1p(np.asarray(a)) for a in self.img_data[i]
+                    ]
+
         self.img_mean, self.img_std, self.img_znorm = img_normalization(
             self.img_data, train_stats
         )
@@ -217,7 +224,8 @@ class NetCDFLoader(Dataset):
                 np.array(self.mask_data[ind_data][mask_ds_index][mask_indices])
             )
         image = np.array(self.img_data[ind_data][ds_index][img_indices])
-        image = torch.from_numpy(np.nan_to_num(image))
+        image = precip_log_transform(np.nan_to_num(image), self.data_types[ind_data])
+        image = torch.from_numpy(image)
 
         if cfg.normalize_data:
             image = self.img_znorm[ind_data](image)

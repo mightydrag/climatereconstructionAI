@@ -369,6 +369,19 @@ def set_common_args():
         help="Normalize the input climate data to 0 mean and 1 std",
     )
     arg_parser.add_argument(
+        "--precip-log-transform",
+        action="store_true",
+        help="Apply log1p to precipitation data types before normalization "
+        "(reduces skewness of the precipitation distribution)",
+    )
+    arg_parser.add_argument(
+        "--precip-log-names",
+        type=str_list,
+        default="tp,precip,pr,prate",
+        help="Comma separated data type names treated as precipitation for "
+        "--precip-log-transform",
+    )
+    arg_parser.add_argument(
         "--n-filters",
         type=int,
         default=None,
