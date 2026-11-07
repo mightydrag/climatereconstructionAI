@@ -13,19 +13,22 @@ from .normalizer import img_normalization, bnd_normalization
 from .. import config as cfg
 
 
+def _mask_data_types(mask_names, data_types):
+    if len(mask_names) == len(data_types):
+        return data_types
+    if cfg.n_target_data == 0:
+        return data_types[: len(mask_names)]
+    return data_types[-len(mask_names) :]
+
+
 def load_steadymask(path, mask_names, data_types, device):
     if mask_names is None:
         return None
     else:
         assert len(mask_names) == cfg.out_channels
-        if cfg.n_target_data == 0:
-            steady_mask = load_netcdf(path, mask_names, data_types[: cfg.out_channels])[
-                0
-            ]
-        else:
-            steady_mask = load_netcdf(
-                path, mask_names, data_types[-cfg.n_target_data :]
-            )[0]
+        steady_mask = load_netcdf(
+            path, mask_names, _mask_data_types(mask_names, data_types)
+        )[0]
         # stack + squeeze ensures that it works with steady masks with one timestep or no timestep
         return torch.stack(
             [torch.from_numpy(np.array(mask)).to(device) for mask in steady_mask]
@@ -114,7 +117,11 @@ def load_netcdf(path, data_names, data_types, keep_dss=False):
     if data_names is None:
         return None, None, None
     else:
-        assert len(data_names) == len(data_types)
+        assert len(data_names) == len(data_types), (
+            f"Number of data names ({len(data_names)}) does not match number of "
+            f"data types ({len(data_types)}).\ndata-names: {data_names}\n"
+            f"data-types: {data_types}"
+        )
         if all(".nc" in data_name or ".h5" in data_name for data_name in data_names):
             data_paths = [
                 [os.path.join(path, data_names[i])] for i in range(len(data_names))
@@ -190,7 +197,7 @@ class NetCDFLoader(Dataset):
             )
 
         self.mask_data, self.mask_length, _ = load_netcdf(
-            mask_path, mask_names, data_types
+            mask_path, mask_names, data_types[: len(mask_names)]
         )
 
         if self.mask_data is None:
@@ -213,8 +220,9 @@ class NetCDFLoader(Dataset):
             image = np.array(self.img_data[ind_data][mask_ds_index][mask_indices])
             mask = torch.from_numpy((1 - (np.isnan(image))).astype(image.dtype))
         else:
+            mask_index = min(ind_data, len(self.mask_data) - 1)
             mask = torch.from_numpy(
-                np.array(self.mask_data[ind_data][mask_ds_index][mask_indices])
+                np.array(self.mask_data[mask_index][mask_ds_index][mask_indices])
             )
         image = np.array(self.img_data[ind_data][ds_index][img_indices])
         image = torch.from_numpy(np.nan_to_num(image))
