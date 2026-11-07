@@ -287,7 +287,7 @@ options:
   --model-dir MODEL_DIR
                         Directory of the trained models
   --model-names MODEL_NAMES
-                        Model names
+                        Model names. If 'best', 'latest' or 'final' is given but no such file exists in model-dir, the checkpoint with the highest iteration number is used
   --evaluation-dirs EVALUATION_DIRS
                         Directory where the output files will be stored
   --eval-names EVAL_NAMES

@@ -597,7 +597,9 @@ def set_evaluate_args(arg_file=None, prog_func=None):
         help="Directory of the trained models",
     )
     arg_parser.add_argument(
-        "--model-names", type=str_list, default="1000000.pth", help="Model names"
+        "--model-names", type=str_list, default="1000000.pth", help="Model names. "
+        "If 'best', 'latest' or 'final' is given but no such file exists in "
+        "model-dir, the checkpoint with the highest iteration number is used"
     )
     arg_parser.add_argument(
         "--hindcast-eval",
