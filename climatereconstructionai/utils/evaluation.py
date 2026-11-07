@@ -13,7 +13,7 @@ import properscoring as ps
 
 from .netcdfchecker import reformat_dataset
 from .netcdfloader import load_steadymask
-from .normalizer import renormalize
+from .normalizer import renormalize, precip_log_inverse
 from .plotdata import plot_data
 from .. import config as cfg
 from tqdm import tqdm
@@ -282,9 +282,16 @@ def create_outputs(
 
             output_names[rootname][i_model] += [rootname + suffix + ".nc"]
 
+            arr = data_dict[cname].to(torch.device("cpu")).detach().numpy()[:, j, :, :]
+            if cfg.normalize_data and data_stats is not None:
+                arr = renormalize(
+                    arr, data_stats["mean"][i_data], data_stats["std"][i_data]
+                )
+            arr = precip_log_inverse(arr, data_type)
+
             ds = xr_dss[i_data][1].copy()
             ds[data_type] = xr.DataArray(
-                data_dict[cname].to(torch.device("cpu")).detach().numpy()[:, j, :, :],
+                arr,
                 dims=xr_dss[i_data][2],
                 coords=xr_dss[i_data][3],
             )
