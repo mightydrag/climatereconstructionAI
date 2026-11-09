@@ -15,7 +15,6 @@ from .evaluate_pp_skill import evaluate_pp_skill
 from .spei_calculation.spei_calc import compute_spei_from_surplus
 import xarray as xr
 import numpy as np
-from IPython import embed
 from . import config as cfg
 import importlib.util
 import os
@@ -37,7 +36,7 @@ def resolve_model_name(model_dir, name):
             if f.endswith(".pth") and f[:-4].isdigit()
         ]
         if candidates:
-            return max(candidates, key=int)
+            name = max(candidates, key=int)
     print(f"Using model:", name)
     return name
 
@@ -80,23 +79,6 @@ def evaluate(arg_file=None, prog_func=None):
             cfg.time_steps,
             data_stats,
         )
-        # ---- investigation block ----
-        print("=== dataset structure ===")
-        print("len(dataset):", len(dataset_val))                 # total timesteps = sum(img_length)
-        print("img_length:", dataset_val.img_length)              # per-file lengths
-        print("type img_length:", type(dataset_val.img_length).__name__)
-
-        xr_dss = dataset_val.xr_dss
-        print("num data types:", len(xr_dss))
-        for i_data, file_list in enumerate(xr_dss):
-            print(f"  i_data={i_data}: {len(file_list)} file(s)")
-            for k, entry in enumerate(file_list):
-                # entry shape depends on your version: either a dict or a list
-                ds = entry["ds"] if isinstance(entry, dict) else entry[0]
-                print(f"    file {k}: time size = {len(ds['time'])}, "
-                    f"time range = {ds['time'].values[0]} .. {ds['time'].values[-1]}")
-        print("=== /dataset structure ===")
-
         xrdss = get_xr_dss(cfg.xrdss_paths, cfg.data_types)
 
         n_samples = len(dataset_val)
@@ -156,9 +138,6 @@ def evaluate(arg_file=None, prog_func=None):
                     num_workers=0,
                 )
             )
-            print(" iterator_val", iterator_val)
-            print("Len Dataset_val",len(dataset_val))
-            print("Dataset_val:",dataset_val)
             infill(
                 model,
                 iterator_val,
@@ -172,76 +151,47 @@ def evaluate(arg_file=None, prog_func=None):
     for name in output_names:
         if len(output_names[name]) == 1 and len(output_names[name][1]) == 1:
             os.rename(output_names[name][1][0], name + ".nc")
-        else:
-            if not cfg.split_outputs:
-                dss = []
-                for i_model in output_names[name]:
-                    dss.append(
-                        xr.open_mfdataset(
-                            output_names[name][i_model],
-                            preprocess=store_encoding,
-                            autoclose=True,
-                            combine="nested",
-                            data_vars="minimal",
-                            concat_dim="time",
-                            chunks={},
-                        )
+        elif not cfg.split_outputs:
+            dss = []
+            for i_model in output_names[name]:
+                dss.append(
+                    xr.open_mfdataset(
+                        output_names[name][i_model],
+                        preprocess=store_encoding,
+                        autoclose=True,
+                        combine="nested",
+                        data_vars="minimal",
+                        concat_dim="time",
+                        chunks={},
                     )
-                    dss[-1] = dss[-1].assign_coords({"member": i_model})
+                )
+                dss[-1] = dss[-1].assign_coords({"member": i_model})
 
-                if len(dss) == 1:
-                    ds = dss[-1].drop("member")
-                else:
-                    ds = xr.concat(dss, dim="member")
-
-                ds["time"].encoding = encoding
-                ds["time"].encoding["original_shape"] = len(ds["time"])
-                ds = ds.transpose("time", ...).reset_coords(drop=True)
-                ds.to_netcdf(f"{name}.nc")
-
-                for i_model in output_names[name]:
-                    for output_name in output_names[name][i_model]:
-                        os.remove(output_name)
+            if len(dss) == 1:
+                ds = dss[-1].drop("member")
             else:
-                dss = []
-                for i_model in output_names[name]:
-                    dss.append(
-                        xr.open_mfdataset(
-                            output_names[name][i_model],
-                            preprocess=store_encoding,
-                            autoclose=True,
-                            combine="nested",
-                            data_vars="minimal",
-                            concat_dim="time",
-                            chunks={},
-                        )
-                    )
-                    dss[-1] = dss[-1].assign_coords({"member": i_model})
+                ds = xr.concat(dss, dim="member")
 
-                if len(dss) == 1:
-                    ds = dss[-1].drop("member")
-                else:
-                    ds = xr.concat(dss, dim="member")
+            ds["time"].encoding = encoding
+            ds["time"].encoding["original_shape"] = len(ds["time"])
+            ds = ds.transpose("time", ...).reset_coords(drop=True)
+            ds.to_netcdf(f"{name}.nc")
 
-                ds["time"].encoding = encoding
-                ds["time"].encoding["original_shape"] = len(ds["time"])
-                ds = ds.transpose("time", ...).reset_coords(drop=True)
-                ds.to_netcdf(f"{name}.nc")
-
-                for i_model in output_names[name]:
-                    for output_name in output_names[name][i_model]:
-                        os.remove(output_name)
+            for i_model in output_names[name]:
+                for output_name in output_names[name][i_model]:
+                    os.remove(output_name)
+        # with --split-outputs the per-model/per-split files are kept as written
 
     # --- SPEI post-processing for CWB outputs (editable in-file) ---
     # Edit the following tuple to change the 1-based inclusive month range used per year
     spei_month_range = (1, 3)
 
     if cfg.data_types[0] == "CWB":
-        embed()
-
         names_to_process = [n for n in output_names if "output" in n.lower()]
         for name in tqdm(names_to_process, desc="Computing SPEI for outputs"):
             out_file = f"{name}.nc"
+            if not os.path.exists(out_file):
+                continue
             ds = xr.open_dataset(out_file)
             var = cfg.data_types[0]
             surplus = ds[var].squeeze()

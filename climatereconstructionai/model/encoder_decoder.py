@@ -53,6 +53,8 @@ class DecoderBlock(nn.Module):
     def __init__(self, conv_config, kernel, stride, activation, dilation=(1, 1), groups=1, bias=False):
         super().__init__()
         padding = kernel[0] // 2, kernel[1] // 2
+        self.up_conv = nn.Conv2d(conv_config['in_channels'], conv_config['in_channels'],
+                                 kernel_size=3, padding=1, bias=bias)
         self.partial_conv = PConvBlock(conv_config['in_channels'] + conv_config['skip_channels'],
                                        conv_config['out_channels'], kernel, stride, padding, dilation, groups, bias,
                                        activation, conv_config['bn'])
@@ -75,9 +77,10 @@ class DecoderBlock(nn.Module):
         skip_input = sequence_to_batch(skip_input)
         skip_mask = sequence_to_batch(skip_mask)
 
-        # interpolate input and mask
-        m = nn.Upsample(skip_input.size()[-2:], mode='nearest')
-        h = m(input)
+        # bilinear upsampling followed by a conv (resize-convolution) avoids
+        # nearest-neighbor checkerboard artifacts aligned with the coarse grid
+        m = nn.Upsample(skip_input.size()[-2:], mode='bilinear', align_corners=False)
+        h = self.up_conv(m(input))
         h_mask = m(mask)
 
         if cfg.skip_layers:

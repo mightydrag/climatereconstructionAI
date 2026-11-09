@@ -245,7 +245,11 @@ def infill(model, dataset, eval_path, output_names, data_stats, xr_dss, i_model)
         data_dict["infilled"] *= data_dict["output"]
         data_dict["infilled"] += data_dict["mask"] * data_dict["image"]
 
-        data_dict["image"] /= data_dict["mask"]
+        data_dict["image"] = torch.where(
+            data_dict["mask"] == 1,
+            data_dict["image"],
+            torch.full_like(data_dict["image"], float("nan")),
+        )
 
         # === DENORMALIZE AFTER blending ===
         if cfg.normalize_data and data_stats is not None:
@@ -342,7 +346,12 @@ def create_outputs(
             output_names[rootname][i_model] += [rootname + suffix + ".nc"]
 
             arr = data_dict[cname].to(torch.device("cpu")).detach().numpy()[:, j, :, :]
-            if cfg.normalize_data and data_stats is not None:
+            # "output" and "infilled" were already denormalized in infill()
+            if (
+                cfg.normalize_data
+                and data_stats is not None
+                and cname not in ("output", "infilled")
+            ):
                 arr = renormalize(
                     arr, data_stats["mean"][i_data], data_stats["std"][i_data]
                 )
