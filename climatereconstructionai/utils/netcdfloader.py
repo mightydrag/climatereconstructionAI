@@ -6,7 +6,6 @@ import numpy as np
 import torch
 import xarray as xr
 from torch.utils.data import Dataset, Sampler
-from IPython import embed
 
 from .netcdfchecker import dataset_formatter
 from .normalizer import img_normalization, bnd_normalization, is_precip_data_type, precip_log_transform
