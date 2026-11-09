@@ -1,0 +1,39 @@
+--data-root-dir ./data/
+--mask-dir ./data/masks/
+--model-dir ./snapshots/
+--evaluation-dirs ./evaluations/
+--log-dir ./logs/
+
+--config-name tp
+--run-name cerra-germany-0.05x0.05-el5-single-l5-log
+
+--data-names tp/cerra_tp_ger_lowres_values_in_highres_grid_train.json,tp/cerra_tp_ger_target_train.json
+--mask-names tp/cerra_tp_ger_mask.json,tp/cerra_tp_ger_mask.json
+--steady-masks tp/cerra_tp_ger_steady_mask.json
+--val-names tp/cerra_tp_ger_lowres_values_in_highres_grid_val.json,tp/cerra_tp_ger_target_val.json
+--test-names tp/cerra_tp_ger_lowres_values_in_highres_grid_test.json,tp/cerra_tp_ger_target_test.json
+--xrdss-paths masks/tp
+--data-types tp,tp
+
+--device cuda 
+--n-threads 64
+--n-target-data 1
+--multiple-gpus
+--lr 5e-5
+--out-channels 1
+
+--dataset-name cerra_ger_mult_file
+--plot-result 0,100
+--shuffle-masks
+--encoding-layers 5
+--pooling-layers 0
+--precip-log-transform
+--normalize-data
+--conv-factor 512
+--batch-size 64
+
+--loss-criterion 5
+
+--save-model-interval 2500
+--log-interval 500
+--eval-timesteps 0,100

@@ -1,0 +1,34 @@
+
+--model-dir ./model-checkpoints/
+--evaluation-dirs ./evaluations/
+--log-dir ./logs/
+
+--model-dir ./snapshots
+--snapshot-dir ./snapshots
+
+
+--data-types t2m
+
+--config-name t2m
+--run-name era5_land_HR
+
+--device cuda 
+--n-filters 18
+--n-threads 64
+--n-target-data 0
+--multiple-gpus
+--lr 2e-4
+--out-channels 1
+--dataset-name era5_land_HR
+--eval-format era5_land_HR
+--global-padding
+--encoding-layers 3
+--pooling-layers 0
+--normalize-data
+
+#--xrdss-paths test_file_list.json
+--xrdss-paths /work/uo1075/u244085/trees_in_the_city/data/era5_land/t2max/lowres_in_highres_grid/era5_land_t2max_daily_2022_europe_lowres_values_in_highres_grid.nc
+
+--model-names 150000
+#--model-names best
+

@@ -1,0 +1,37 @@
+--data-root-dir ./data/
+--mask-dir ./data/masks/
+--model-dir ./snapshots/
+--evaluation-dirs ./evaluations/
+--log-dir ./logs/
+
+--config-name t2m
+--run-name cerra-germany-0.05x0.05-el5-all-var-l0
+
+--data-names t2m/cerra_t2m_ger_lowres_values_in_highres_grid_train.json,relative_humidity/cerra_relative_humidity_ger_lowres_values_in_highres_grid_train.json,surface_pressure/cerra_surface_pressure_ger_lowres_values_in_highres_grid_train.json,wind_speed/cerra_wind_speed_ger_lowres_values_in_highres_grid_train.json,wind_direction/cerra_wind_direction_ger_lowres_values_in_highres_grid_train.json,orography/cerra_orography_ger_lowres_values_in_highres_grid_train.json,t2m/cerra_t2m_ger_target_train.json
+--mask-names t2m/cerra_t2m_ger_mask.json,relative_humidity/cerra_relative_humidity_ger_mask.json,surface_pressure/cerra_surface_pressure_ger_mask.json,wind_speed/cerra_wind_speed_ger_mask.json,wind_direction/cerra_wind_direction_ger_mask.json,orography/cerra_orography_ger_mask.json,t2m/cerra_t2m_ger_mask.json
+--steady-masks t2m/cerra_t2m_ger_steady_mask.json
+--val-names t2m/cerra_t2m_ger_lowres_values_in_highres_grid_val.json,relative_humidity/cerra_relative_humidity_ger_lowres_values_in_highres_grid_val.json,surface_pressure/cerra_surface_pressure_ger_lowres_values_in_highres_grid_val.json,wind_speed/cerra_wind_speed_ger_lowres_values_in_highres_grid_val.json,wind_direction/cerra_wind_direction_ger_lowres_values_in_highres_grid_val.json,orography/cerra_orography_ger_lowres_values_in_highres_grid_val.json,t2m/cerra_t2m_ger_target_val.json
+--test-names t2m/cerra_t2m_ger_lowres_values_in_highres_grid_test.json,relative_humidity/cerra_relative_humidity_ger_lowres_values_in_highres_grid_test.json,surface_pressure/cerra_surface_pressure_ger_lowres_values_in_highres_grid_test.json,wind_speed/cerra_wind_speed_ger_lowres_values_in_highres_grid_test.json,wind_direction/cerra_wind_direction_ger_lowres_values_in_highres_grid_test.json,orography/cerra_orography_ger_lowres_values_in_highres_grid_test.json,t2m/cerra_t2m_ger_target_test.json
+--xrdss-paths masks/t2m
+--data-types 2t,2r,sp,10si,10wdir,orog,2t
+--device cuda 
+--n-threads 64
+--n-target-data 1
+--multiple-gpus
+--lr 5e-4
+--out-channels 1
+
+--dataset-name cerra_ger_mult_file
+--plot-result 0,100
+--shuffle-masks
+--encoding-layers 5
+--pooling-layers 0
+--normalize-data
+--conv-factor 128
+--batch-size 64
+
+--loss-criterion 0
+
+--save-model-interval 2500
+--log-interval 500
+--eval-timesteps 0,100

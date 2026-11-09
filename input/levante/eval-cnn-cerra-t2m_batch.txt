@@ -1,0 +1,39 @@
+
+--model-dir ./model-checkpoints/
+--evaluation-dirs ./evaluations/
+--log-dir ./logs/
+
+--model-dir ./snapshots
+--snapshot-dir ./snapshots
+
+
+--data-types 2t
+
+--config-name t2m
+--run-name cerra-europe-0.05x0.05
+
+--device cuda 
+--n-threads 64
+--n-target-data 0
+--multiple-gpus
+--lr 2e-4
+--out-channels 1
+
+--dataset-name cerra
+--plot-result 0,100
+--shuffle-masks
+--global-padding
+--encoding-layers 4
+--pooling-layers 2
+--normalize-data
+--conv-factor 128
+--batch-size 8
+
+--loss-criterion 4
+
+#--xrdss-paths test_file_list.json
+--xrdss-paths /work/uo1075/u244085/cerra_data/t2m/cerra_dm_t2m_2024_lowres_values_in_highres_grid.nc
+
+--model-names 75000
+#--model-names best
+

@@ -1,0 +1,40 @@
+--data-root-dir ./data/
+--mask-dir ./data/masks/
+--model-dir ./model-checkpoints/
+--evaluation-dirs ./evaluations/
+--log-dir ./logs/
+
+--config-name reative_humidity
+--run-name cerra-europe-0.05x0.05
+
+--data-names relative_humidity/cerra_rel_hum_train.json
+--mask-names relative_humidity/cerra_rel_hum_mask.json
+--steady-masks relative_humidity/cerra_rel_hum_steady_mask.json            
+--val-names relative_humidity/cerra_rel_hum_val.json
+--test-names relative_humidity/cerra_rel_hum_test.json
+--xrdss-paths masks/relative_humidityax
+--data-types 2r
+
+--device cuda 
+--n-filters 18
+--n-threads 64
+--n-target-data 0
+--multiple-gpus
+--lr 2e-4
+--out-channels 1
+
+--dataset-name cerra
+--plot-result 0,100
+--shuffle-masks
+--global-padding
+--encoding-layers 4
+--pooling-layers 0
+--normalize-data
+--conv-factor 128
+--batch-size 8
+
+--loss-criterion 4
+
+--save-model-interval 2500
+--log-interval 100
+--eval-timesteps 0,100

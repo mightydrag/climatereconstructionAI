@@ -1,0 +1,41 @@
+--data-root-dir ./data/
+--mask-dir ./data/test/masks/
+--model-dir ./snapshots/
+--evaluation-dirs ./evaluations/
+--log-dir ./logs/
+
+--config-name tp
+--run-name cerra-germany-0.05x0.05-el5-single-l5
+
+--data-file-template /work/uo1075/u244085/cerra_data/{var}/cerra_dm_{var}_{reg}_{year}_lowres_values_in_highres_grid.nc
+--static-file-template /work/uo1075/u244085/cerra_data/{var}/cerra_dm_{var}_{reg}_2005.nc
+--target-file-template /work/uo1075/u244085/cerra_data/{var}/cerra_dm_{var}_{reg}_{year}.nc
+--mask-file-template /work/uo1075/u244085/cerra_data/mask/cerra_dm_{var}_{reg}_{year}_mask.nc
+--static-mask-template /work/uo1075/u244085/cerra_data/mask/cerra_dm_{var}_{reg}_2005_mask.nc
+--steady-mask-file /work/uo1075/u244085/cerra_data/mask/cerra_dm_{var}_{reg}_1985_steady_mask.nc
+--region ger
+--data-types tp,tp
+--start-year 2016
+--end-year 2025
+
+--device cuda 
+--n-threads 64
+--n-target-data 1
+--multiple-gpus
+--lr 5e-4
+--out-channels 1
+
+--dataset-name cerra_ger_mult_file
+--plot-result 0,100
+--shuffle-masks
+--encoding-layers 5,5
+--pooling-layers 0,0
+--normalize-data
+--conv-factor 512
+--batch-size 64
+
+--loss-criterion 5
+
+--save-model-interval 2500
+--log-interval 500
+--eval-timesteps 0,100

@@ -1,0 +1,40 @@
+--data-root-dir ./data/
+--mask-dir ./data/masks/
+--model-dir ./model-checkpoints/
+--evaluation-dirs ./evaluations/
+--log-dir ./logs/
+
+--config-name cerra
+--run-name cerra
+
+--data-names t2m/cerra_t2m_train.json
+--mask-names t2m/cerra_t2m_mask.json
+--steady-masks t2m/cerra_t2m_steady_mask.json            
+--val-names t2m/cerra_t2m_val.json
+--test-names t2m/cerra_t2m_test.json
+--xrdss-paths masks/t2max
+--data-types 2t
+
+--device cuda 
+--n-filters 18
+--n-threads 64
+--n-target-data 0
+--multiple-gpus
+--lr 2e-4
+--out-channels 1
+
+--dataset-name cerra
+--plot-result 0,100
+--shuffle-masks
+--global-padding
+--encoding-layers 5
+--pooling-layers 0
+--normalize-data
+--conv-factor 128
+--batch-size 64
+
+--loss-criterion 4
+
+--save-model-interval 2500
+--log-interval 100
+

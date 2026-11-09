@@ -1,0 +1,36 @@
+--data-root-dir ./data/
+--mask-dir ./data/masks/
+--model-dir ./model-checkpoints/
+--evaluation-dirs ./evaluations/
+--log-dir ./logs/
+
+--config-name t2m
+--run-name cerra-germany-0.05x0.05-1deg-on005
+
+--data-names t2m/cerra_t2m_ger_1deg_on005_train.json,orography/cerra_orography_ger_1deg_on005_train.json,land_sea_mask/cerra_land_sea_mask_ger_1deg_on005_train.json,t2m/cerra_t2m_ger_1deg_on005_target_train.json
+--val-names t2m/cerra_t2m_ger_1deg_on005_val.json,orography/cerra_orography_ger_1deg_on005_val.json,land_sea_mask/cerra_land_sea_mask_ger_1deg_on005_val.json,t2m/cerra_t2m_ger_1deg_on005_target_val.json
+--test-names t2m/cerra_t2m_ger_1deg_on005_test.json,orography/cerra_orography_ger_1deg_on005_test.json,land_sea_mask/cerra_land_sea_mask_ger_1deg_on005_test.json,t2m/cerra_t2m_ger_1deg_on005_target_test.json
+--data-types 2t,orog,lsm,2t
+
+--device cuda 
+--n-threads 64
+--n-target-data 1
+--multiple-gpus
+--lr 5e-3
+--out-channels 1
+
+--dataset-name cerra_ger_mult_file
+--plot-result 0,100
+--shuffle-masks
+--encoding-layers 5
+--pooling-layers 0
+--normalize-data
+--conv-factor 128
+--batch-size 64
+
+
+--loss-criterion 4
+
+--save-model-interval 2500
+--log-interval 100
+--eval-timesteps 0,100
