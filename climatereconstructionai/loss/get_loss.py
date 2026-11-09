@@ -4,6 +4,8 @@ from .feature_loss import FeatureLoss
 from .hole_loss import HoleLoss
 from .total_variation_loss import TotalVariationLoss
 from .valid_loss import ValidLoss
+from .bernoulli_loss import BernoulliLoss
+from .precip_loss import PrecipLoss
 from .. import config as cfg
 from ..utils.featurizer import VGG16FeatureExtractor
 
@@ -20,9 +22,6 @@ def prepare_data_dict(img_mask, loss_mask, output, gt, tensor_keys):
     mask = mask[:, cfg.recurrent_steps, :, :, :]
     gt = gt[:, cfg.recurrent_steps, cfg.gt_channels, :, :]
 
-    data_dict['mask'] = mask
-    data_dict['output'] = output
-    data_dict['gt'] = gt
 
     if loss_mask is not None:
         # Add batch and channels dimensions to loss_mask
@@ -30,9 +29,14 @@ def prepare_data_dict(img_mask, loss_mask, output, gt, tensor_keys):
         loss_mask = loss_mask.unsqueeze(0).unsqueeze(2)
         loss_mask = loss_mask[:, cfg.recurrent_steps, :, :, :]
         data_dict['loss_mask'] = loss_mask
+        output = output * loss_mask
+        gt = gt * loss_mask
     else:
         data_dict['loss_mask'] = None
 
+    data_dict['mask'] = mask
+    data_dict['output'] = output
+    data_dict['gt'] = gt
     if 'comp' in tensor_keys:
         if  loss_mask is not None:
             data_dict['comp'] = mask * loss_mask * gt + (1 - mask) * loss_mask * output
@@ -69,6 +73,15 @@ class loss_criterion(torch.nn.Module):
                     self.criterions.append(TotalVariationLoss().to(cfg.device))
                     if 'comp' not in self.tensors:
                         self.tensors.append('comp')
+
+                elif loss == 'precip':
+                    self.criterions.append(PrecipLoss(getattr(cfg, 'precip_loss_alpha', 1.0)).to(cfg.device))
+                    self.tensors.append('precip')
+
+                elif loss == 'bern':
+                    self.criterions.append(BernoulliLoss(getattr(cfg, 'bern_pos_weight', 1.0),
+                                                         getattr(cfg, 'bern_threshold', 0.0)).to(cfg.device))
+                    self.tensors.append('bern')
 
 
     def forward(self, img_mask, loss_mask, output, gt):

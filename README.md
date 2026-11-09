@@ -153,6 +153,9 @@ options:
   --masked-bn           Use masked batch normalization instead of standard BN
   --lazy-load           Use lazy loading for large datasets
   --global-padding      Use a custom padding for global dataset
+  --precip-log-transform Apply log1p to precipitation data types before normalization (reduces skewness of the precipitation distribution)
+  --precip-log-names PRECIP_LOG_NAMES
+                          Comma separated data type names treated as precipitation for --precip-log-transform
   --normalize-data      Normalize the input climate data to 0 mean and 1 std
   --n-filters N_FILTERS
                         Number of filters for the first/last layer
@@ -192,7 +195,7 @@ options:
   --final-models-interval FINAL_MODELS_INTERVAL
                         Iteration step interval at which the final models should be saved
   --loss-criterion LOSS_CRITERION
-                        Index defining the loss function (0=original from Liu et al., 1=MAE of the hole region)
+                        Index defining the loss function (0=original from Liu et al., 1=MAE of the hole region,4=precipitation-weighted hole loss)
   --eval-timesteps EVAL_TIMESTEPS
                         Sample indices for which a snapshot is created at each iter defined by log-interval
   -f LOAD_FROM_FILE, --load-from-file LOAD_FROM_FILE
@@ -200,6 +203,12 @@ options:
   --vlim VLIM           Comma separated list of vmin,vmax values for the color scale of the snapshot images
   --lambda-loss LAMBDA_LOSS
                         Comma separated list of lambda factors (key) followed by their corresponding values.Overrides the loss_criterion pre-setting
+  --precip-loss-alpha PRECIP_LOSS_ALPHA
+                        Weight boost factor for wet pixels in the precipitation loss (used with loss-criterion 4)
+  --bern-pos-weight BERN_POS_WEIGHT
+                        Weight for wet pixels in the Bernoulli (rain occurrence) loss
+  --bern-threshold BERN_THRESHOLD
+                        Threshold on the (normalized) target above which a pixel counts as wet in the Bernoulli loss
   --val-metrics VAL_METRICS
                         Comma separated list of metrics that are evaluated on the val dataset at log-interval
   --tensor-plots TENSOR_PLOTS
@@ -281,7 +290,7 @@ options:
   --model-dir MODEL_DIR
                         Directory of the trained models
   --model-names MODEL_NAMES
-                        Model names
+                        Model names. If 'best', 'latest' or 'final' is given but no such file exists in model-dir, the checkpoint with the highest iteration number is used
   --evaluation-dirs EVALUATION_DIRS
                         Directory where the output files will be stored
   --eval-names EVAL_NAMES

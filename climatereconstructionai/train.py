@@ -119,7 +119,7 @@ def train(arg_file=None):
 
     # define network model
     # Temporarily disabled fusion channels for input streams with depth channels
-    if len(image_sizes) - cfg.n_target_data < 1:
+    if len(image_sizes) - cfg.n_target_data > 1:
         model = CRAINet(
             img_size=image_sizes[0],
             enc_dec_layers=cfg.encoding_layers[0],
@@ -239,6 +239,7 @@ def train(arg_file=None):
                     model,
                     dataset_val,
                     "{:s}/images/iter_{:d}".format(cfg.snapshot_dir, n_iter),
+                    train_stats, 
                 )
 
             if cfg.lr_scheduler_patience is not None:

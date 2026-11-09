@@ -9,7 +9,7 @@ from torch.utils.data import Dataset, Sampler
 from IPython import embed
 
 from .netcdfchecker import dataset_formatter
-from .normalizer import img_normalization, bnd_normalization
+from .normalizer import img_normalization, bnd_normalization, is_precip_data_type, precip_log_transform
 from .. import config as cfg
 
 
@@ -114,7 +114,11 @@ def load_netcdf(path, data_names, data_types, keep_dss=False):
     if data_names is None:
         return None, None, None
     else:
-        assert len(data_names) == len(data_types)
+        assert len(data_names) == len(data_types), (
+                f"Number of data names ({len(data_names)}) does not match number of "
+                f"data types ({len(data_types)}).\ndata-names: {data_names}\n"
+                f"data-types: {data_types}"
+            )
         if all(".nc" in data_name or ".h5" in data_name for data_name in data_names):
             data_paths = [
                 [os.path.join(path, data_names[i])] for i in range(len(data_names))
@@ -199,6 +203,12 @@ class NetCDFLoader(Dataset):
             if not cfg.shuffle_masks:
                 print(self.mask_length, self.img_length)
                 assert self.img_length == self.mask_length
+        if getattr(cfg, "precip_log_transform", False):
+            for i in range(len(self.img_data)):
+                if is_precip_data_type(self.data_types[i]):
+                    self.img_data[i] = [
+                        np.log1p(np.asarray(a)) for a in self.img_data[i]
+                    ]
 
         self.img_mean, self.img_std, self.img_znorm = img_normalization(
             self.img_data, train_stats

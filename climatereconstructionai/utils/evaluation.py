@@ -13,7 +13,7 @@ import properscoring as ps
 
 from .netcdfchecker import reformat_dataset
 from .netcdfloader import load_steadymask
-from .normalizer import renormalize
+from .normalizer import renormalize, precip_log_inverse
 from .plotdata import plot_data
 from .. import config as cfg
 from tqdm import tqdm
@@ -21,7 +21,7 @@ from tqdm import tqdm
 plt.rcParams.update({"font.size": 16})
 
 
-def create_snapshot_image(model, dataset, filename):
+def create_snapshot_image(model, dataset, filename, data_stats=None):
     data_dict = {}
     data_dict["image"], data_dict["mask"], data_dict["gt"], index = zip(
         *[dataset[int(i)] for i in cfg.eval_timesteps]
@@ -37,6 +37,34 @@ def create_snapshot_image(model, dataset, filename):
         data_dict["mask"] * data_dict["image"]
         + (1 - data_dict["mask"]) * data_dict["output"]
     )
+    # === DENORMALIZE AFTER blending ===
+    if cfg.normalize_data and data_stats is not None:
+        if cfg.n_target_data == 0:
+            start_idx = 0
+            n_out_channels = cfg.out_channels
+        else:
+            start_idx = len(data_stats["mean"]) - cfg.n_target_data
+            n_out_channels = cfg.n_target_data
+
+        # Denormalize output
+        for c in range(min(n_out_channels, data_dict["output"].shape[1])):
+            mean_val = data_stats["mean"][start_idx + c]
+            std_val = data_stats["std"][start_idx + c]
+            data_dict["output"][:, :, c, :, :] = renormalize(
+                data_dict["output"][:, :, c, :, :],
+                mean_val,
+                std_val,
+            )
+
+        # Denormalize infilled
+        for c in range(min(n_out_channels, data_dict["infilled"].shape[1])):
+            mean_val = data_stats["mean"][start_idx + c]
+            std_val = data_stats["std"][start_idx + c]
+            data_dict["infilled"][:, :, c, :, :] = renormalize(
+                data_dict["infilled"][:, :, c, :, :],
+                mean_val,
+                std_val,
+            )
 
     keys = list(data_dict.keys())
     for key in keys:
@@ -212,11 +240,42 @@ def infill(model, dataset, eval_path, output_names, data_stats, xr_dss, i_model)
 
                 data_dict[key][:, cfg.gt_channels, (spatial_mask == 0).type(torch.bool)] = np.nan
 
+        # === CORRECTED: Blend FIRST in normalized space, THEN denormalize ===
         data_dict["infilled"] = 1 - data_dict["mask"]
         data_dict["infilled"] *= data_dict["output"]
         data_dict["infilled"] += data_dict["mask"] * data_dict["image"]
 
         data_dict["image"] /= data_dict["mask"]
+
+        # === DENORMALIZE AFTER blending ===
+        if cfg.normalize_data and data_stats is not None:
+            # Determine output channels
+            if cfg.n_target_data == 0:
+                start_idx = 0
+                n_out_channels = cfg.out_channels
+            else:
+                start_idx = len(data_stats["mean"]) - cfg.n_target_data
+                n_out_channels = cfg.n_target_data
+
+            # Denormalize output
+            for c in range(min(n_out_channels, data_dict["output"].shape[1])):
+                mean_val = data_stats["mean"][start_idx + c]
+                std_val = data_stats["std"][start_idx + c]
+                data_dict["output"][:, c, :, :] = renormalize(
+                    data_dict["output"][:, c, :, :],
+                    mean_val,
+                    std_val,
+                )
+
+            # Denormalize infilled (already blended correctly in normalized space)
+            for c in range(min(n_out_channels, data_dict["infilled"].shape[1])):
+                mean_val = data_stats["mean"][start_idx + c]
+                std_val = data_stats["std"][start_idx + c]
+                data_dict["infilled"][:, c, :, :] = renormalize(
+                    data_dict["infilled"][:, c, :, :],
+                    mean_val,
+                    std_val,
+                )
 
         create_outputs(
             data_dict,
@@ -282,9 +341,16 @@ def create_outputs(
 
             output_names[rootname][i_model] += [rootname + suffix + ".nc"]
 
+            arr = data_dict[cname].to(torch.device("cpu")).detach().numpy()[:, j, :, :]
+            if cfg.normalize_data and data_stats is not None:
+                arr = renormalize(
+                    arr, data_stats["mean"][i_data], data_stats["std"][i_data]
+                )
+            arr = precip_log_inverse(arr, data_type)
+
             ds = xr_dss[i_data][1].copy()
             ds[data_type] = xr.DataArray(
-                data_dict[cname].to(torch.device("cpu")).detach().numpy()[:, j, :, :],
+                arr,
                 dims=xr_dss[i_data][2],
                 coords=xr_dss[i_data][3],
             )

@@ -27,6 +27,19 @@ def store_encoding(ds):
     encoding = ds["time"].encoding
     return ds
 
+def resolve_model_name(model_dir, name):
+    if name in ("best", "latest", "final") and not os.path.exists(
+        f"{model_dir}/{name}.pth"
+    ):
+        candidates = [
+            f[:-4]
+            for f in os.listdir(model_dir)
+            if f.endswith(".pth") and f[:-4].isdigit()
+        ]
+        if candidates:
+            return max(candidates, key=int)
+    print(f"Using model:", name)
+    return name
 
 def evaluate(arg_file=None, prog_func=None):
     cfg.set_evaluate_args(arg_file, prog_func)
@@ -39,6 +52,7 @@ def evaluate(arg_file=None, prog_func=None):
         os.makedirs(f"{cfg.evaluation_dirs[0]}/data")
 
     n_models = len(cfg.model_names)
+    cfg.model_names = [resolve_model_name(cfg.model_dir, name) for name in cfg.model_names]
 
     eval_path = [f"{cfg.evaluation_dirs[0]}/data/{name}" for name in cfg.eval_names]
     output_names = {}
@@ -104,7 +118,7 @@ def evaluate(arg_file=None, prog_func=None):
             cfg.conv_factor = max(image_sizes[0])
 
         print(cfg.n_channel_steps)
-        if len(image_sizes) - cfg.n_target_data < 1:
+        if len(image_sizes) - cfg.n_target_data > 1:
             model = CRAINet(
                 img_size=image_sizes[0],
                 enc_dec_layers=cfg.encoding_layers[0],

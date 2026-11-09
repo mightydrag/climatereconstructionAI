@@ -3,7 +3,6 @@ import json
 import os
 import os.path
 import pkgutil
-from IPython import embed
 
 
 def get_format(dataset_name):
@@ -73,6 +72,21 @@ def set_lambdas():
         lambda_dict["style"] = 120.0
     elif loss_criterion == 3:
         lambda_dict["valid"] = 1.0
+
+    elif loss_criterion == 4:
+        # lambda_dict["valid"] = 7.0
+        lambda_dict["hole"] = 7.0
+        lambda_dict["tv"] = 0.1
+        lambda_dict["prc"] = 0.05
+        lambda_dict["style"] = 120.0
+
+    elif loss_criterion == 5:
+        lambda_dict["valid"] = 1.0
+        lambda_dict["precip"] = 6.0
+        lambda_dict["bern"] = 1.0
+        lambda_dict["tv"] = 0.1
+        lambda_dict["prc"] = 0.05
+        lambda_dict["style"] = 120.0
 
     if lambda_loss is not None:
         lambda_dict.update(lambda_loss)
@@ -356,6 +370,19 @@ def set_common_args():
         help="Use a custom padding for global dataset",
     )
     arg_parser.add_argument(
+        "--precip-log-transform",
+        action="store_true",
+        help="Apply log1p to precipitation data types before normalization "
+        "(reduces skewness of the precipitation distribution)",
+    )
+    arg_parser.add_argument(
+        "--precip-log-names",
+        type=str_list,
+        default="tp,precip,pr,prate",
+        help="Comma separated data type names treated as precipitation for "
+        "--precip-log-transform",
+    )
+    arg_parser.add_argument(
         "--normalize-data",
         action="store_true",
         help="Normalize the input climate data to 0 mean and 1 std",
@@ -410,12 +437,12 @@ def set_train_args(arg_file=None):
         default=None,
         help="Comma separated list of netCDF files (climate dataset) for validation",
     )
-    arg_parser.add_argument(
-        "--snapshot-dir",
-        type=str,
-        default="snapshots/",
-        help="Parent directory of the training checkpoints and the snapshot images",
-    )
+    # arg_parser.add_argument(
+    #     "--snapshot-dir",
+    #     type=str,
+    #     default="snapshots/",
+    #     help="Parent directory of the training checkpoints and the snapshot images",
+    # )
     arg_parser.add_argument(
         "--resume-iter",
         type=int,
@@ -479,7 +506,8 @@ def set_train_args(arg_file=None):
         type=int,
         default=0,
         help="Index defining the loss function "
-        "(0=original from Liu et al., 1=MAE of the hole region)",
+        "(0=original from Liu et al., 1=MAE of the hole region, "
+        "4=precipitation-weighted hole loss)",
     )
     arg_parser.add_argument(
         "--eval-timesteps",
@@ -506,6 +534,26 @@ def set_train_args(arg_file=None):
         default=None,
         help="Comma separated list of lambda factors (key) followed by their corresponding values."
         "Overrides the loss_criterion pre-setting",
+    )
+    arg_parser.add_argument(
+        "--precip-loss-alpha",
+        type=float,
+        default=1.0,
+        help="Weight boost factor for wet pixels in the precipitation loss "
+        "(used with loss-criterion 4)",
+    )
+    arg_parser.add_argument(
+        "--bern-pos-weight",
+        type=float,
+        default=1.0,
+        help="Weight for wet pixels in the Bernoulli (rain occurrence) loss",
+    )
+    arg_parser.add_argument(
+        "--bern-threshold",
+        type=float,
+        default=0.0,
+        help="Threshold on the (normalized) target above which a pixel counts "
+        "as wet in the Bernoulli loss",
     )
     arg_parser.add_argument(
         "--val-metrics",
