@@ -57,7 +57,6 @@ def train(arg_file=None):
     if cfg.deterministic:
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
-        torch.backends.cudnn.enabled = False
 
     for subdir in ("", "/images", "/ckpt"):
         outdir = cfg.snapshot_dir + subdir
@@ -266,10 +265,12 @@ def train(arg_file=None):
 
     prof.stop()
 
+    best_model = early_stop.best_model if early_stop.best_model is not None else model
+
     save_ckpt(
         "{:s}/ckpt/best.pth".format(cfg.snapshot_dir),
         train_stats,
-        [(str(n_iter), n_iter, early_stop.best_model, optimizer)],
+        [(str(n_iter), n_iter, best_model, optimizer)],
     )
 
     save_ckpt("{:s}/ckpt/final.pth".format(cfg.snapshot_dir), train_stats, savelist)
@@ -277,15 +278,17 @@ def train(arg_file=None):
     # run final validation over n_iters_val
     if cfg.val_metrics is not None:
         val_metrics = []
+        metric_dict = {}
         for _ in range(cfg.n_iters_val):
             image, mask, gt = [x.to(cfg.device) for x in next(iterator_val)[:3]]
             with torch.no_grad():
                 output = model(image, mask)
             metric_dict = get_metrics(mask, steady_mask, output, gt, "val")
             val_metrics.append(list(metric_dict.values()))
-        val_metrics = torch.tensor(val_metrics).mean(dim=0)
 
-        metric_dict = dict(zip(metric_dict.keys(), val_metrics))
+        if val_metrics:
+            val_metrics = torch.tensor(val_metrics).mean(dim=0)
+            metric_dict = dict(zip(metric_dict.keys(), val_metrics))
         if cfg.early_stopping:
             metric_dict.update(
                 {
