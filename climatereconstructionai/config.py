@@ -372,10 +372,12 @@ def set_common_args():
     arg_parser.add_argument(
         "--decoder-upsample",
         choices=("bilinear", "nearest"),
-        default="bilinear",
+        default=None,
         help="Decoder upsampling mode: 'bilinear' applies bilinear upsampling "
         "followed by a conv (resize-convolution, avoids checkerboard "
-        "artifacts); 'nearest' reproduces the old nearest-neighbor behavior",
+        "artifacts); 'nearest' reproduces the old nearest-neighbor behavior. "
+        "Default: bilinear for training; during evaluation, auto-detected "
+        "from the checkpoint (nearest if it has no decoder up_conv keys)",
     )
     arg_parser.add_argument(
         "--precip-log-transform",

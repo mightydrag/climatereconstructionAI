@@ -63,6 +63,18 @@ def evaluate(arg_file=None, prog_func=None):
             cfg.device,
         )
 
+        if cfg.decoder_upsample is None:
+            has_up_conv = any(
+                ".up_conv." in key
+                for label in ckpt_dict["labels"]
+                for key in ckpt_dict[label]["model"]
+            )
+            cfg.decoder_upsample = "bilinear" if has_up_conv else "nearest"
+            print(
+                f"Auto-detected --decoder-upsample {cfg.decoder_upsample} "
+                f"from checkpoint {cfg.model_names[i_model]}.pth"
+            )
+
         if cfg.use_train_stats:
             data_stats = ckpt_dict["train_stats"]
         else:
