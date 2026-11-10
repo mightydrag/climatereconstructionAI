@@ -77,10 +77,16 @@ class DecoderBlock(nn.Module):
         skip_input = sequence_to_batch(skip_input)
         skip_mask = sequence_to_batch(skip_mask)
 
-        # bilinear upsampling followed by a conv (resize-convolution) avoids
-        # nearest-neighbor checkerboard artifacts aligned with the coarse grid
-        m = nn.Upsample(skip_input.size()[-2:], mode='bilinear', align_corners=False)
-        h = self.up_conv(m(input))
+        # 'bilinear' (default): upsampling followed by a conv
+        # (resize-convolution) avoids nearest-neighbor checkerboard artifacts
+        # aligned with the coarse grid; 'nearest': old behavior
+        # (--decoder-upsample nearest)
+        if getattr(cfg, "decoder_upsample", "bilinear") == "nearest":
+            m = nn.Upsample(skip_input.size()[-2:], mode="nearest")
+            h = m(input)
+        else:
+            m = nn.Upsample(skip_input.size()[-2:], mode="bilinear", align_corners=False)
+            h = self.up_conv(m(input))
         h_mask = m(mask)
 
         if cfg.skip_layers:
