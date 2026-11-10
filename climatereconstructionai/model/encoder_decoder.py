@@ -53,8 +53,11 @@ class DecoderBlock(nn.Module):
     def __init__(self, conv_config, kernel, stride, activation, dilation=(1, 1), groups=1, bias=False):
         super().__init__()
         padding = kernel[0] // 2, kernel[1] // 2
-        self.up_conv = nn.Conv2d(conv_config['in_channels'], conv_config['in_channels'],
-                                 kernel_size=3, padding=1, bias=bias)
+        # up_conv is only used in 'bilinear' mode; in 'nearest' mode it is not
+        # created so that checkpoints trained before up_conv existed load strictly
+        if getattr(cfg, "decoder_upsample", "bilinear") != "nearest":
+            self.up_conv = nn.Conv2d(conv_config['in_channels'], conv_config['in_channels'],
+                                     kernel_size=3, padding=1, bias=bias)
         self.partial_conv = PConvBlock(conv_config['in_channels'] + conv_config['skip_channels'],
                                        conv_config['out_channels'], kernel, stride, padding, dilation, groups, bias,
                                        activation, conv_config['bn'])
