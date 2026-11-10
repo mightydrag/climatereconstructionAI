@@ -12,7 +12,7 @@ CONFIG_PATH="$REPO_DIR/input/levante/$CONFIG_FILE"
 
 LOG_DIR="eval_slurm_output"
 mkdir -p "$LOG_DIR"
-JOB_NAME="crai-eval-${CONFIG_FILE%.txt}"
+JOB_NAME="crai-${CONFIG_FILE%.txt}"
 
 echo "================ submit_eval ================"
 echo "config      : $CONFIG_PATH"

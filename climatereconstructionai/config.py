@@ -372,7 +372,7 @@ def set_common_args():
     arg_parser.add_argument(
         "--decoder-upsample",
         choices=("bilinear", "nearest"),
-        default="bilinear",
+        default="nearest",
         help="Decoder upsampling mode: 'bilinear' applies bilinear upsampling "
         "followed by a conv (resize-convolution, avoids checkerboard "
         "artifacts); 'nearest' reproduces the old nearest-neighbor behavior",
