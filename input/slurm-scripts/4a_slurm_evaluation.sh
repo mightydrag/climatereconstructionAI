@@ -121,6 +121,7 @@ python3 "${PYTHON_SCRIPT}" \
     --mask-value      "${MASK_VALUE:-1}" \
     --mask-mode       "${MASK_MODE:-keep}" \
     --point-radius-km "${POINT_RADIUS_KM:-0}" \
+    --roc-quantiles   "${ROC_QUANTILES:-0.5,0.9,0.95,0.99}" \
     ${DESEASONALIZE_FLAG}
 
 echo "=============================================================="
