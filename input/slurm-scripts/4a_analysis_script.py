@@ -29,6 +29,21 @@ PASS 2 (only with --deseasonalize, per year):
 Outputs (into --output-dir):
   <var>_maps_<y0>-<y1>.nc, <var>_stats_<y0>-<y1>.txt, *.png
 
+POINT / AREA STATISTICS (default: Hamburg at 53.5511N/9.9937E,
+see --point-lat/--point-lon/--point-name; disable with --no-point-stats):
+  the grid cell nearest to the point -- or, with --point-radius-km R > 0,
+  ALL grid cells within R km (great-circle) of it -- is selected in the
+  same per-year passes; pooled bias/RMSE/MAE/EV/correlation/R2 over those
+  cells (and their deseasonalized counterparts) are added to the stats
+  file, plus a time-series figure of the area-mean series
+  (<var>_point_<name>_<y0>-<y1>_timeseries.png, or _area_... with radius).
+
+DISTRIBUTION MATCHING:
+  variance ratio (var NN / var ref) and fraction of gap closed
+  (1 - MAE / MAE-of-climatology) per grid cell and pooled; ROC curves
+  with AUC and Peirce skill score (PSS) for exceedance events at the
+  reference quantiles given by --roc-quantiles (<var>_roc_<y0>-<y1>.png).
+
 File-name patterns and --mask-file support two variable placeholders:
     {var}    -> the variable/config name, e.g. 'relative_humidity'
     {var_nc} -> the NetCDF variable name, e.g. '2r' (VAR_FILE_DEFAULTS;
@@ -129,6 +144,29 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--mask-mode", choices=("keep", "exclude"), default="keep",
                    help="'keep': keep ONLY cells where mask == value; "
                         "'exclude': NaN the cells where mask == value")
+    p.add_argument("--point-name", default="Hamburg",
+                   help="Name of the point location for the point statistics "
+                        "(used in the stats file and figure names)")
+    p.add_argument("--point-lat", type=float, default=53.5511,
+                   help="Latitude of the point for the point statistics; the "
+                        "nearest grid cell is used (default: Hamburg)")
+    p.add_argument("--point-lon", type=float, default=9.9937,
+                   help="Longitude of the point for the point statistics; the "
+                        "nearest grid cell is used (default: Hamburg)")
+    p.add_argument("--point-radius-km", type=float, default=0.0,
+                   help="If > 0, pool the point statistics over ALL grid "
+                        "cells within this radius (km, great-circle) of "
+                        "--point-lat/--point-lon instead of only the nearest "
+                        "cell (default 0: single nearest cell)")
+    p.add_argument("--no-point-stats", action="store_true",
+                   help="Disable the point statistics (default: enabled for "
+                        "the --point-lat/--point-lon location)")
+    p.add_argument("--roc-quantiles", default="0.5,0.9,0.95,0.99",
+                   help="Reference quantiles defining the exceedance events "
+                        "for the ROC/AUC/PSS analysis (comma-separated)")
+    p.add_argument("--roc-max-points", type=int, default=200000,
+                   help="Max number of pooled samples used for the ROC "
+                        "curve / AUC computation")
     return p.parse_args()
 
 
@@ -229,8 +267,9 @@ def pattern_path(base_dir, pattern, var, year):
 
 
 def resolve_inputs(args):
-    """Resolve variable, dirs, the {year: (nn_file, ref_file)} mapping and
-    the mask file. Config-file mode if --args-file is given, else manual."""
+    """Resolve variable, dirs, the {year: (nn_file, ref_file)} mapping, the
+    mask file and the config name (None in manual mode). Config-file mode
+    if --args-file is given, else manual."""
     if args.args_file:
         cfg = parse_args_file(args.args_file)
         base = Path(args.args_file).resolve().parent
@@ -302,7 +341,7 @@ def resolve_inputs(args):
                 print(f"steady mask: {mask_file}"
                       + (" (first of %d listed files)" % len(mask_list)
                          if len(mask_list) > 1 else ""))
-        return var, path_original, str(path_nn), files, mask_file
+        return var, path_original, str(path_nn), files, mask_file, config_name
 
     # ---------------- manual mode ----------------
     missing = [k for k, v in [("--path-original", args.path_original),
@@ -319,7 +358,7 @@ def resolve_inputs(args):
             pattern_path(args.path_original, args.file_pattern_ref, args.var, y))
         for y in years
     }
-    return args.var, args.path_original, args.path_nn, files, args.mask_file
+    return args.var, args.path_original, args.path_nn, files, args.mask_file, None
 
 
 # ------------------------------------------------------------------
@@ -588,6 +627,116 @@ def build_keep_mask(args, mask_file, ref_file):
 
 
 # ------------------------------------------------------------------
+# Point / area statistics, e.g. for Hamburg and its surroundings
+# ------------------------------------------------------------------
+def haversine_km(lat1, lon1, lat2, lon2):
+    """Great-circle distance in km (degrees in, numpy arrays allowed)."""
+    r = 6371.0
+    lat1, lon1, lat2, lon2 = (np.radians(lat1), np.radians(lon1),
+                              np.radians(lat2), np.radians(lon2))
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    a = (np.sin(dlat / 2) ** 2
+         + np.cos(lat1) * np.cos(lat2) * np.sin(dlon / 2) ** 2)
+    return 2 * r * np.arcsin(np.sqrt(a))
+
+
+def build_point_mask(ds, lat_name, lon_name, lat, lon, radius_km):
+    """Boolean (lat, lon) DataArray of the grid cells used for the point /
+    area statistics: ALL cells within radius_km of (lat, lon), or only the
+    nearest cell when radius_km == 0."""
+    lat_vals = ds[lat_name].values
+    lon_vals = ds[lon_name].values
+    if radius_km and radius_km > 0:
+        la2, lo2 = np.meshgrid(lat_vals, lon_vals, indexing="ij")
+        mask = haversine_km(lat, lon, la2, lo2) <= radius_km
+    else:
+        mask = np.zeros((lat_vals.size, lon_vals.size), dtype=bool)
+        mask[int(np.argmin(np.abs(lat_vals - lat))),
+             int(np.argmin(np.abs(lon_vals - lon)))] = True
+    return xr.DataArray(mask, dims=(lat_name, lon_name),
+                        coords={lat_name: lat_vals, lon_name: lon_vals})
+
+
+def pooled_stats(se, sse, sae, sr, ssr, sn, ssn, cnr, n):
+    """Verification statistics pooled over n space-time points, computed
+    from accumulated sums (bias=se/n, RMSE=sqrt(sse/n), MAE=sae/n, EV and
+    correlation from the pooled moments). NaN when n < 2."""
+    out = {"n": int(n), "bias": np.nan, "rmse": np.nan, "mae": np.nan,
+           "ev": np.nan, "corr": np.nan, "r2": np.nan, "var_ratio": np.nan}
+    if n < 2:
+        return out
+    var_e = (sse - se * se / n) / (n - 1)
+    var_r = (ssr - sr * sr / n) / (n - 1)
+    var_n = (ssn - sn * sn / n) / (n - 1)
+    cov_nr = (cnr - sn * sr / n) / (n - 1)
+    corr = np.nan
+    if var_n > 0 and var_r > 0:
+        corr = float(cov_nr / np.sqrt(var_n * var_r))
+    out["bias"] = float(se / n)
+    out["rmse"] = float(np.sqrt(sse / n))
+    out["mae"] = float(sae / n)
+    out["ev"] = float(1 - var_e / var_r) if var_r > 0 else np.nan
+    out["corr"] = corr
+    out["r2"] = corr ** 2 if np.isfinite(corr) else np.nan
+    out["var_ratio"] = float(var_n / var_r) if var_r > 0 else np.nan
+    return out
+
+
+def roc_analysis(scores, events, threshold, max_points=200000):
+    """ROC analysis for the binary `events` with continuous `scores`:
+    AUC (rank / Mann-Whitney formula, ties averaged) and ROC curve points
+    on a sub-sample of at most max_points points, plus the Peirce skill
+    score PSS = TPR + TNR - 1 from the confusion matrix at `threshold`
+    (all valid points). Returns None for degenerate events."""
+    scores = np.asarray(scores, dtype="float64").ravel()
+    events = np.asarray(events, dtype=bool).ravel()
+    finite = np.isfinite(scores)
+    scores = scores[finite]
+    events = events[finite]
+    n = scores.size
+    n_pos = int(events.sum())
+    n_neg = n - n_pos
+    if n < 2 or n_pos == 0 or n_neg == 0:
+        return None
+    tp = int(np.sum(events & (scores > threshold)))
+    fp = int(np.sum(~events & (scores > threshold)))
+    fn = n_pos - tp
+    tn = n_neg - fp
+    pss = (tp / (tp + fn) + tn / (tn + fp) - 1.0
+           if (tp + fn) > 0 and (tn + fp) > 0 else np.nan)
+    if n > max_points:
+        idx = np.unique(np.linspace(0, n - 1, max_points).astype(int))
+        s_sub = scores[idx]
+        e_sub = events[idx]
+    else:
+        s_sub, e_sub = scores, events
+    s_sorted = np.sort(s_sub)
+    e_sorted = e_sub[np.argsort(s_sub, kind="mergesort")].astype(np.int64)
+    p_sub = int(e_sorted.sum())
+    if p_sub == 0 or p_sub == s_sorted.size:  # degenerate sub-sample
+        s_sorted = np.sort(scores)
+        e_sorted = events[np.argsort(scores, kind="mergesort")].astype(np.int64)
+        p_sub = n_pos
+    uniq, inv, counts = np.unique(s_sorted, return_inverse=True,
+                                  return_counts=True)
+    starts = np.cumsum(counts) - counts
+    avg_rank = starts + (counts + 1) / 2.0  # 1-based average rank per tie
+    ranks = avg_rank[inv]
+    auc = float((ranks[e_sorted == 1].sum() - p_sub * (p_sub + 1) / 2)
+                / (p_sub * (s_sorted.size - p_sub)))
+    thr = np.quantile(s_sub, np.linspace(0, 1, 201))
+    cum_pos = np.concatenate([[0], np.cumsum(e_sorted)])
+    k = np.searchsorted(s_sorted, thr, side="right")
+    tp_gt = p_sub - cum_pos[k]
+    fp_gt = (s_sorted.size - k) - tp_gt
+    fpr = np.concatenate([[0.0], fp_gt / (s_sorted.size - p_sub), [1.0]])
+    tpr = np.concatenate([[0.0], tp_gt / p_sub, [1.0]])
+    return {"threshold": float(threshold), "auc": auc, "pss": float(pss),
+            "fpr": fpr, "tpr": tpr, "tp": tp, "fp": fp, "fn": fn, "tn": tn}
+
+
+# ------------------------------------------------------------------
 # Main
 # ------------------------------------------------------------------
 def main() -> None:
@@ -606,7 +755,7 @@ def main() -> None:
     error_quantiles = [float(q) for q in args.quantiles.split(",")]
 
     # ---- resolve inputs (config file or manual) ------------------------
-    var, path_original, path_nn, files, mask_file = resolve_inputs(args)
+    var, path_original, path_nn, files, mask_file, config_name = resolve_inputs(args)
     # the mask path may contain {var}/{var_nc} tokens
     if mask_file and "{" in str(mask_file):
         mask_file = subst_tokens(mask_file, var)
@@ -615,6 +764,7 @@ def main() -> None:
     tag = f"{var}_{years[0]}-{years[-1]}"
     print(f"=== Evaluation: {tag} ===")
     print(f"years     : {years}")
+    print(f"config    : {config_name or 'manual mode'}")
     if not args.args_file:
         print(f"patterns  : nn='{args.file_pattern_nn}' "
               f"ref='{args.file_pattern_ref}'")
@@ -624,6 +774,11 @@ def main() -> None:
     var_file = detect_var_file(args, files[years[0]][1])
     print(f"variable  : {var_file}")
     var_file_nn = detect_var_file_nn(args, str(files[years[0]][0]), var_file)
+    # physical unit of the variable (for the plot metadata), if stored
+    with xr.open_dataset(str(files[years[0]][1])) as ds0:
+        unit = str(ds0[var_file].attrs.get("units", "")).strip()
+    if unit:
+        print(f"unit      : {unit}")
 
     # ---- deseasonalization settings -----------------------------------
     deseasonalize = args.deseasonalize
@@ -636,7 +791,40 @@ def main() -> None:
     # ---- optional cell mask from a file -------------------------------
     keep_mask = build_keep_mask(args, mask_file, str(files[years[0]][1]))
 
+    # ---- point / area (default Hamburg; all cells within radius) -------
+    point_stats_on = not args.no_point_stats
+    point_mask = None
+    point_n_cells = 0
+    point_cell = None  # (sel_lat, sel_lon) of the nearest cell (radius 0)
+    if point_stats_on:
+        with xr.open_dataset(str(files[years[0]][1])) as ds0:
+            p_lat, p_lon = detect_spatial_names(ds0)
+            point_mask = build_point_mask(ds0, p_lat, p_lon,
+                                          args.point_lat, args.point_lon,
+                                          args.point_radius_km)
+        point_n_cells = int(point_mask.sum())
+        if args.point_radius_km > 0:
+            print(f"Area '{args.point_name}': {point_n_cells} grid cells "
+                  f"within {args.point_radius_km} km of "
+                  f"({args.point_lat}, {args.point_lon})")
+        else:
+            lat_vals = point_mask[p_lat].values
+            lon_vals = point_mask[p_lon].values
+            iy = int(np.argmin(np.abs(lat_vals - args.point_lat)))
+            ix = int(np.argmin(np.abs(lon_vals - args.point_lon)))
+            point_cell = (float(lat_vals[iy]), float(lon_vals[ix]))
+            print(f"Point '{args.point_name}': requested "
+                  f"({args.point_lat}, {args.point_lon}) -> grid cell "
+                  f"({point_cell[0]:.4f}, {point_cell[1]:.4f})")
+    # pooled moment accumulators (raw and deseasonalized) + area-mean series
+    pt_keys = ("se", "sse", "sae", "sr", "ssr", "sn", "ssn", "cnr", "n")
+    pt = dict.fromkeys(pt_keys, 0.0)
+    pt_a = dict.fromkeys(pt_keys, 0.0)
+    pt_nn_mean, pt_ref_mean = [], []
+    pt_nn_mean_a, pt_ref_mean_a = [], []
+
     bias_maps, mse_maps, ev_maps, corr_maps = [], [], [], []
+    var_ratio_maps, fgc_maps = [], []
     q_maps = {q: [] for q in error_quantiles}
     nn_qq_samples, ref_qq_samples = [], []
     sum_err = 0.0
@@ -669,6 +857,13 @@ def main() -> None:
             nn_anom.std("time") * ref_anom.std("time")
         )
 
+        # distribution matching: variance ratio and fraction of gap closed
+        # (gap = MAE of the no-skill climatology baseline around the ref)
+        var_ratio_y = xr.where(ref_var > 1e-12, nn.var("time") / ref_var, np.nan)
+        mad_ref_y = np.abs(ref_anom).mean("time")
+        fgc_y = xr.where(mad_ref_y > 1e-12,
+                         1 - np.abs(err).mean("time") / mad_ref_y, np.nan)
+
         err_q = err.isel(time=slice(None, None, args.quantile_stride))
         q_y = {}
         for q in error_quantiles:
@@ -689,6 +884,8 @@ def main() -> None:
             "mse": mse_y,
             "ev": ev_y,
             "corr": corr_y,
+            "var_ratio": var_ratio_y,
+            "fgc": fgc_y,
             **{f"q{int(q * 100)}": q_y[q] for q in error_quantiles},
             "se": se,
             "sse": sse,
@@ -696,6 +893,22 @@ def main() -> None:
             "nn_sub": nn_sub,
             "ref_sub": ref_sub,
         }
+        # point/area pooled moments, computed in the same pass
+        if point_stats_on:
+            err_r = err.where(point_mask)
+            ref_r = ref.where(point_mask)
+            nn_r = nn.where(point_mask)
+            stats_members["pt_se"] = err_r.sum()
+            stats_members["pt_sse"] = (err_r ** 2).sum()
+            stats_members["pt_sae"] = np.abs(err_r).sum()
+            stats_members["pt_sr"] = ref_r.sum()
+            stats_members["pt_ssr"] = (ref_r ** 2).sum()
+            stats_members["pt_sn"] = nn_r.sum()
+            stats_members["pt_ssn"] = (nn_r ** 2).sum()
+            stats_members["pt_cnr"] = (nn_r * ref_r).sum()
+            stats_members["pt_cnt"] = err_r.count()
+            stats_members["pt_nn_mean"] = nn_r.mean(dim=[p_lat, p_lon])
+            stats_members["pt_ref_mean"] = ref_r.mean(dim=[p_lat, p_lon])
 
         # day-of-year climatological sums (for pass 2), lazy
         # NOTE: group by the EXPLICIT day-of-year array, not the string
@@ -717,6 +930,8 @@ def main() -> None:
         mse_maps.append(stats["mse"])
         ev_maps.append(stats["ev"])
         corr_maps.append(stats["corr"])
+        var_ratio_maps.append(stats["var_ratio"])
+        fgc_maps.append(stats["fgc"])
         for q in error_quantiles:
             q_maps[q].append(stats[f"q{int(q * 100)}"])
         sum_err += float(stats["se"])
@@ -725,6 +940,15 @@ def main() -> None:
 
         nn_qq_samples.append(stats["nn_sub"].values.ravel().astype("float32"))
         ref_qq_samples.append(stats["ref_sub"].values.ravel().astype("float32"))
+        if point_stats_on:
+            for k, key in (("se", "pt_se"), ("sse", "pt_sse"),
+                           ("sae", "pt_sae"), ("sr", "pt_sr"),
+                           ("ssr", "pt_ssr"), ("sn", "pt_sn"),
+                           ("ssn", "pt_ssn"), ("cnr", "pt_cnr"),
+                           ("n", "pt_cnt")):
+                pt[k] += float(stats[key])
+            pt_nn_mean.append(stats["pt_nn_mean"])
+            pt_ref_mean.append(stats["pt_ref_mean"])
         print(f"    valid points: {int(stats['cnt'])}")
 
         if deseasonalize:
@@ -744,6 +968,8 @@ def main() -> None:
     ev_map = mean_over_years(ev_maps)
     corr_map = mean_over_years(corr_maps)
     r2_map = corr_map ** 2
+    var_ratio_map = mean_over_years(var_ratio_maps)
+    fgc_map = mean_over_years(fgc_maps)
 
     # ---------------- scalar stats (raw fields) --------------------------
     bias_scalar = sum_err / n_total
@@ -756,11 +982,32 @@ def main() -> None:
     ref_all = ref_all_raw[finite]
     ev_scalar = 1 - np.var(nn_all - ref_all) / np.var(ref_all)
     r2_scalar = np.corrcoef(ref_all, nn_all)[0, 1] ** 2
+    var_ref_all = np.var(ref_all)
+    var_ratio_scalar = (float(np.var(nn_all) / var_ref_all)
+                        if var_ref_all > 0 else np.nan)
+    mae_scalar = float(np.mean(np.abs(nn_all - ref_all)))
+    mad_ref_scalar = float(np.mean(np.abs(ref_all - ref_all.mean())))
+    fgc_scalar = float(1 - mae_scalar / mad_ref_scalar) if mad_ref_scalar > 0 else np.nan
 
     print(f"Mean bias (NN - reference):    {bias_scalar:.4f}")
     print(f"Root Mean Squared Error (RMSE):{rmse_scalar:.4f}")
     print(f"Explained variance:           {ev_scalar:.4f}")
     print(f"R² (squared correlation):     {r2_scalar:.4f}")
+    print(f"Variance ratio (NN/ref):      {var_ratio_scalar:.4f}")
+    print(f"Fraction of gap closed:       {fgc_scalar:.4f}")
+
+    # ROC / AUC / PSS for exceedance of reference quantiles (pooled samples)
+    roc_results = []
+    for q in (float(q) for q in args.roc_quantiles.split(",")):
+        thr = float(np.quantile(ref_all, q))
+        r = roc_analysis(nn_all, ref_all > thr, thr, args.roc_max_points)
+        if r is None:
+            print(f"ROC q={q:.2f}: degenerate event, skipped")
+            continue
+        r["q"] = q
+        roc_results.append(r)
+        print(f"ROC q={q:.2f} (threshold {thr:.4f}): "
+              f"AUC={r['auc']:.4f}  PSS={r['pss']:.4f}")
 
     # ---------------- PASS 2: deseasonalized EV / correlation -----------
     ev_anom_map = corr_anom_map = r2_anom_map = None
@@ -774,10 +1021,12 @@ def main() -> None:
         doy_acc = None  # free the accumulators
 
         ev_anom_maps, corr_anom_maps = [], []
+        var_ratio_a_maps, fgc_a_maps = [], []
         # pooled scalar moments on anomalies
         # FIX: also accumulate the NN-anomaly moments (s_n, ss_n, c_nr) so
         # that the scalar correlation is corr(NN anomaly, ref anomaly).
         s_e = ss_e = s_r = ss_r = s_n = ss_n = c_nr = 0.0
+        s_sae = s_sad = 0.0
         n_a = 0
 
         for year in years:
@@ -802,6 +1051,14 @@ def main() -> None:
                 nn_an.std("time") * ref_an.std("time")
             )
 
+            # distribution matching on anomalies
+            var_ratio_a = xr.where(ref_var_a > 1e-12,
+                                   nn_anom.var("time") / ref_var_a, np.nan)
+            mad_ref_a = np.abs(ref_an).mean("time")
+            fgc_a = xr.where(mad_ref_a > 1e-12,
+                             1 - np.abs(err_a).mean("time") / mad_ref_a,
+                             np.nan)
+
             # pooled moments for the scalar EV / correlation
             m = {
                 "se": err_a.sum(),
@@ -811,12 +1068,34 @@ def main() -> None:
                 "sn": nn_anom.sum(),
                 "ssn": (nn_anom ** 2).sum(),
                 "cnr": (nn_anom * ref_anom).sum(),
+                "sae": np.abs(err_a).sum(),
+                "sad": np.abs(ref_an).sum(),
                 "cnt": err_a.count(),
             }
-            stats2 = xr.Dataset({"ev": ev_a, "corr": corr_a, **m}).compute()
+            # deseasonalized point/area pooled moments (same pass)
+            if point_stats_on:
+                err_a_r = err_a.where(point_mask)
+                ref_a_r = ref_anom.where(point_mask)
+                nn_a_r = nn_anom.where(point_mask)
+                m["pt_se"] = err_a_r.sum()
+                m["pt_sse"] = (err_a_r ** 2).sum()
+                m["pt_sae"] = np.abs(err_a_r).sum()
+                m["pt_sr"] = ref_a_r.sum()
+                m["pt_ssr"] = (ref_a_r ** 2).sum()
+                m["pt_sn"] = nn_a_r.sum()
+                m["pt_ssn"] = (nn_a_r ** 2).sum()
+                m["pt_cnr"] = (nn_a_r * ref_a_r).sum()
+                m["pt_cnt"] = err_a_r.count()
+                m["pt_nn_mean"] = nn_a_r.mean(dim=[p_lat, p_lon])
+                m["pt_ref_mean"] = ref_a_r.mean(dim=[p_lat, p_lon])
+            stats2 = xr.Dataset({"ev": ev_a, "corr": corr_a,
+                                 "var_ratio_a": var_ratio_a, "fgc_a": fgc_a,
+                                 **m}).compute()
 
             ev_anom_maps.append(stats2["ev"])
             corr_anom_maps.append(stats2["corr"])
+            var_ratio_a_maps.append(stats2["var_ratio_a"])
+            fgc_a_maps.append(stats2["fgc_a"])
             s_e += float(stats2["se"])
             ss_e += float(stats2["sse"])
             s_r += float(stats2["sr"])
@@ -824,11 +1103,24 @@ def main() -> None:
             s_n += float(stats2["sn"])
             ss_n += float(stats2["ssn"])
             c_nr += float(stats2["cnr"])
+            s_sae += float(stats2["sae"])
+            s_sad += float(stats2["sad"])
             n_a += int(stats2["cnt"])
+            if point_stats_on:
+                for k, key in (("se", "pt_se"), ("sse", "pt_sse"),
+                               ("sae", "pt_sae"), ("sr", "pt_sr"),
+                               ("ssr", "pt_ssr"), ("sn", "pt_sn"),
+                               ("ssn", "pt_ssn"), ("cnr", "pt_cnr"),
+                               ("n", "pt_cnt")):
+                    pt_a[k] += float(stats2[key])
+                pt_nn_mean_a.append(stats2["pt_nn_mean"])
+                pt_ref_mean_a.append(stats2["pt_ref_mean"])
 
         ev_anom_map = mean_over_years(ev_anom_maps)
         corr_anom_map = mean_over_years(corr_anom_maps)
         r2_anom_map = corr_anom_map ** 2
+        var_ratio_anom_map = mean_over_years(var_ratio_a_maps)
+        fgc_anom_map = mean_over_years(fgc_a_maps)
 
         # scalar EV / correlation from pooled anomaly moments
         var_e = (ss_e - s_e ** 2 / n_a) / (n_a - 1)
@@ -840,6 +1132,49 @@ def main() -> None:
 
         print(f"Anomaly explained variance:  {ev_anom_scalar:.4f}")
         print(f"Anomaly correlation:         {corr_anom_scalar:.4f}")
+        var_ratio_anom_scalar = float(var_n / var_r) if var_r > 0 else np.nan
+        fgc_anom_scalar = float(1 - s_sae / s_sad) if s_sad > 0 else np.nan
+        print(f"Anomaly variance ratio:      {var_ratio_anom_scalar:.4f}")
+        print(f"Anomaly fraction gap closed: {fgc_anom_scalar:.4f}")
+
+    # ---------------- point / area statistics (e.g. Hamburg) ------------
+    point_results = point_results_anom = None
+    if point_stats_on:
+        point_results = pooled_stats(pt["se"], pt["sse"], pt["sae"],
+                                     pt["sr"], pt["ssr"], pt["sn"],
+                                     pt["ssn"], pt["cnr"], pt["n"])
+        if args.point_radius_km > 0:
+            print(f"Area '{args.point_name}' ({point_n_cells} cells within "
+                  f"{args.point_radius_km} km), raw fields:")
+        else:
+            print(f"Point '{args.point_name}' (grid cell "
+                  f"{point_cell[0]:.4f}, {point_cell[1]:.4f}), raw fields:")
+        print(f"  bias={point_results['bias']:.4f}  "
+              f"RMSE={point_results['rmse']:.4f}  "
+              f"MAE={point_results['mae']:.4f}")
+        print(f"  EV={point_results['ev']:.4f}  "
+              f"corr={point_results['corr']:.4f}  "
+              f"R2={point_results['r2']:.4f}  "
+              f"var_ratio={point_results['var_ratio']:.4f}  "
+              f"(n={point_results['n']})")
+        if point_results["n"] < 2:
+            print(f"WARNING: '{args.point_name}' area has fewer than 2 "
+                  "valid values (masked out?) -> statistics are NaN.")
+        if deseasonalize:
+            point_results_anom = pooled_stats(pt_a["se"], pt_a["sse"],
+                                              pt_a["sae"], pt_a["sr"],
+                                              pt_a["ssr"], pt_a["sn"],
+                                              pt_a["ssn"], pt_a["cnr"],
+                                              pt_a["n"])
+            print(f"Area '{args.point_name}', deseasonalized:")
+            print(f"  EV={point_results_anom['ev']:.4f}  "
+                  f"corr={point_results_anom['corr']:.4f}  "
+                  f"R2={point_results_anom['r2']:.4f}  "
+                  f"bias={point_results_anom['bias']:.4f}  "
+                  f"RMSE={point_results_anom['rmse']:.4f}  "
+                  f"MAE={point_results_anom['mae']:.4f}  "
+                  f"var_ratio={point_results_anom['var_ratio']:.4f}  "
+                  f"(n={point_results_anom['n']})")
 
     # ---------------- save maps + stats ---------------------------------
     maps = {
@@ -849,6 +1184,8 @@ def main() -> None:
         "explained_variance": ev_map,
         "correlation": corr_map,
         "r2": r2_map,
+        "variance_ratio": var_ratio_map,
+        "fraction_gap_closed": fgc_map,
         **{f"error_q{int(q * 100):02d}": q_maps_mean[q] for q in error_quantiles},
     }
     if deseasonalize:
@@ -856,6 +1193,8 @@ def main() -> None:
             "ev_anomaly": ev_anom_map,
             "corr_anomaly": corr_anom_map,
             "r2_anomaly": r2_anom_map,
+            "variance_ratio_anomaly": var_ratio_anom_map,
+            "fraction_gap_closed_anomaly": fgc_anom_map,
         })
     maps_ds = xr.Dataset(maps)
     nc_path = out_dir / f"{tag}_maps.nc"
@@ -878,14 +1217,58 @@ def main() -> None:
         f.write(f"Root Mean Squared Error (RMSE): {rmse_scalar:.6f}\n")
         f.write(f"Explained variance:            {ev_scalar:.6f}\n")
         f.write(f"R2 (squared correlation):      {r2_scalar:.6f}\n")
+        f.write(f"Variance ratio (NN/ref):       {var_ratio_scalar:.6f}\n")
+        f.write(f"Fraction of gap closed:        {fgc_scalar:.6f}\n")
         if deseasonalize:
             f.write(f"Anomaly explained variance:    {ev_anom_scalar:.6f}\n")
             f.write(f"Anomaly correlation:           {corr_anom_scalar:.6f}\n")
+            f.write(f"Anomaly variance ratio:        {var_ratio_anom_scalar:.6f}\n")
+            f.write(f"Anomaly fraction gap closed:   {fgc_anom_scalar:.6f}\n")
+        if roc_results:
+            f.write("\nROC/AUC/PSS (exceedance of reference quantiles):\n")
+            for r in roc_results:
+                f.write(f"  q={r['q']:.2f} threshold={r['threshold']:.6f}: "
+                        f"AUC={r['auc']:.6f}  PSS={r['pss']:.6f}\n")
         f.write(f"Valid space-time points:        {n_total}\n")
+        if point_stats_on:
+            if args.point_radius_km > 0:
+                f.write(f"\nArea statistics ({args.point_name}, "
+                        f"{point_n_cells} cells within "
+                        f"{args.point_radius_km} km of "
+                        f"{args.point_lat}/{args.point_lon}), raw fields:\n")
+            else:
+                f.write(f"\nPoint statistics ({args.point_name}, requested "
+                        f"{args.point_lat}/{args.point_lon}, grid cell "
+                        f"{point_cell[0]:.4f}/{point_cell[1]:.4f}), "
+                        f"raw fields:\n")
+            f.write(f"  Area bias (NN - reference):  {point_results['bias']:.6f}\n")
+            f.write(f"  Area RMSE:                   {point_results['rmse']:.6f}\n")
+            f.write(f"  Area MAE:                    {point_results['mae']:.6f}\n")
+            f.write(f"  Area explained variance:     {point_results['ev']:.6f}\n")
+            f.write(f"  Area correlation:            {point_results['corr']:.6f}\n")
+            f.write(f"  Area R2 (squared corr.):     {point_results['r2']:.6f}\n")
+            f.write(f"  Area variance ratio:         {point_results['var_ratio']:.6f}\n")
+            f.write(f"  Area valid space-time points:{point_results['n']:d}\n")
+            if deseasonalize:
+                f.write(f"Area statistics ({args.point_name}), deseasonalized:\n")
+                f.write(f"  Area anomaly bias:           {point_results_anom['bias']:.6f}\n")
+                f.write(f"  Area anomaly RMSE:           {point_results_anom['rmse']:.6f}\n")
+                f.write(f"  Area anomaly MAE:            {point_results_anom['mae']:.6f}\n")
+                f.write(f"  Area anomaly EV:             {point_results_anom['ev']:.6f}\n")
+                f.write(f"  Area anomaly correlation:    {point_results_anom['corr']:.6f}\n")
+                f.write(f"  Area anomaly R2:             {point_results_anom['r2']:.6f}\n")
+                f.write(f"  Area anomaly variance ratio: {point_results_anom['var_ratio']:.6f}\n")
     print(f"Stats written to {stats_path}")
 
     # ---------------- figures ------------------------------------------
     ylab = f"{years[0]}-{years[-1]}"
+    # metadata line shown in the title of EVERY figure:
+    # variable, unit, time span and config name
+    meta_line = (f"{var} ({var_file})" + (f" [{unit}]" if unit else "")
+                 + f", {ylab}, config: {config_name or 'manual mode'}")
+
+    def with_meta(title):
+        return f"{title}\n{meta_line}"
 
     def map_and_hist(da, cmap, vmin, vmax, xlabel, unit_label, fname, title,
                      mean_line=True, extra_vlines=(), hist_title=None):
@@ -894,7 +1277,7 @@ def main() -> None:
         )
         da.plot(ax=ax_map, cmap=cmap, vmin=vmin, vmax=vmax,
                 cbar_kwargs={"label": unit_label})
-        ax_map.set_title(title)
+        ax_map.set_title(with_meta(title))
         vals = da.values.ravel()
         vals = vals[np.isfinite(vals)]
         if len(vals):
@@ -948,7 +1331,7 @@ def main() -> None:
     ax.set_yscale("log")
     ax.set_xlabel("Error quantile value (NN - reference)")
     ax.set_ylabel("Number of grid cells")
-    ax.set_title(f"Per-cell error quantiles, {ylab}")
+    ax.set_title(with_meta(f"Per-cell error quantiles, {ylab}"))
     ax.legend(frameon=False)
     plt.tight_layout()
     fig.savefig(out_dir / f"{tag}_error_quantiles_hist.png", dpi=150)
@@ -961,7 +1344,7 @@ def main() -> None:
         )
         qm.plot(ax=ax_map, cmap="RdBu_r", vmin=-vmax_q, vmax=vmax_q,
                 cbar_kwargs={"label": f"q{int(q * 100):02d} of error (NN - reference)"})
-        ax_map.set_title(f"Error quantile q={q:.2f} per grid cell, {ylab}")
+        ax_map.set_title(with_meta(f"Error quantile q={q:.2f} per grid cell, {ylab}"))
         vals = qm.values.ravel()
         vals = vals[np.isfinite(vals)]
         ax_hist.hist(vals, bins=51, color="C0", alpha=0.8)
@@ -997,6 +1380,48 @@ def main() -> None:
                      "corr_anomaly",
                      f"Correlation of deseasonalized data, {ylab}")
 
+    # --- distribution matching: variance ratio & fraction of gap closed ---
+    vr_vals = var_ratio_map.values.ravel()
+    vr_vals = vr_vals[np.isfinite(vr_vals)]
+    dev = float(np.max(np.abs(vr_vals - 1))) if vr_vals.size else 1.0
+    dev = min(max(dev, 0.5), 2.0)  # symmetric colour range around 1
+    map_and_hist(var_ratio_map, "RdBu_r", 1 - dev, 1 + dev,
+                 "Variance ratio (NN/ref)", "Variance ratio (NN/ref)",
+                 "variance_ratio",
+                 f"Variance ratio per grid cell, {ylab}")
+    map_and_hist(fgc_map, "RdBu_r", -1, 1,
+                 "Fraction of gap closed", "Fraction of gap closed",
+                 "fraction_gap_closed",
+                 f"Fraction of gap closed per grid cell, {ylab}")
+    if deseasonalize:
+        map_and_hist(var_ratio_anom_map, "RdBu_r", 1 - dev, 1 + dev,
+                     "Variance ratio (anomalies)", "Variance ratio (NN/ref, deseasonalized)",
+                     "variance_ratio_anomaly",
+                     f"Variance ratio of deseasonalized data, {ylab}")
+        map_and_hist(fgc_anom_map, "RdBu_r", -1, 1,
+                     "Fraction of gap closed (anomalies)",
+                     "Fraction of gap closed (deseasonalized)",
+                     "fraction_gap_closed_anomaly",
+                     f"Fraction of gap closed of deseasonalized data, {ylab}")
+
+    # --- ROC curves for exceedance events (AUC / PSS) ----------------------
+    if roc_results:
+        fig, ax = plt.subplots(figsize=(7, 6))
+        ax.plot([0, 1], [0, 1], "k--", lw=1, label="no skill")
+        for i, r in enumerate(roc_results):
+            ax.plot(r["fpr"], r["tpr"], lw=1.5, color=f"C{i}",
+                    label=f"q={r['q']:.2f}: AUC={r['auc']:.3f}, "
+                          f"PSS={r['pss']:.3f}")
+        ax.set_xlabel("False positive rate")
+        ax.set_ylabel("True positive rate")
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.set_title(with_meta("ROC curves for exceedance events"))
+        ax.legend(frameon=False, fontsize=8, loc="lower right")
+        plt.tight_layout()
+        fig.savefig(out_dir / f"{tag}_roc.png", dpi=150)
+        plt.close(fig)
+
     # --- pooled QQ plot -----------------------------------------------------
     fig, ax = plt.subplots(figsize=(6, 6))
     nn_sorted = np.sort(nn_all)
@@ -1008,7 +1433,7 @@ def main() -> None:
     ax.plot(ref_sorted[idx], nn_sorted[idx], ".", ms=2, color="C0", alpha=0.5)
     ax.set_xlabel("Reference quantiles")
     ax.set_ylabel("NN quantiles")
-    ax.set_title(f"Pooled QQ plot, {ylab}")
+    ax.set_title(with_meta(f"Pooled QQ plot, {ylab}"))
     ax.legend(frameon=False)
     plt.tight_layout()
     fig.savefig(out_dir / f"{tag}_qq.png", dpi=150)
@@ -1032,7 +1457,7 @@ def main() -> None:
                     label=f"NN mean  = {float(nn_all.mean()):.4f}")
     ax_hist.set_xlabel(f"{var_file} value")
     ax_hist.set_ylabel("Density")
-    ax_hist.set_title(f"Distribution of values, {ylab}")
+    ax_hist.set_title(with_meta(f"Distribution of values, {ylab}"))
     ax_hist.legend(frameon=False)
 
     for data, color, lab in ((ref_all, "C1", "Reference"),
@@ -1042,12 +1467,44 @@ def main() -> None:
         ax_cdf.plot(xs, ys, color=color, lw=1.5, label=lab)
     ax_cdf.set_xlabel(f"{var_file} value")
     ax_cdf.set_ylabel("Cumulative fraction")
-    ax_cdf.set_title(f"Empirical CDF, {ylab}")
+    ax_cdf.set_title(with_meta(f"Empirical CDF, {ylab}"))
     ax_cdf.legend(frameon=False)
 
     plt.tight_layout()
     fig.savefig(out_dir / f"{tag}_value_distribution.png", dpi=150)
     plt.close(fig)
+
+    # --- point / area time series (e.g. Hamburg and surroundings) ---------
+    if point_stats_on:
+        nn_pt_all = xr.concat(pt_nn_mean, dim="time")
+        ref_pt_all = xr.concat(pt_ref_mean, dim="time")
+        time_pt = nn_pt_all["time"]
+        pname = args.point_name.lower().replace(" ", "_")
+        if args.point_radius_km > 0:
+            kind = "area"
+            area_lbl = (f"{point_n_cells} cells within "
+                        f"{args.point_radius_km} km, area mean")
+        else:
+            kind = "point"
+            area_lbl = f"grid cell {point_cell[0]:.2f}, {point_cell[1]:.2f}"
+        fig, (ax_ts, ax_err) = plt.subplots(2, 1, figsize=(13, 7),
+                                            sharex=True)
+        ax_ts.plot(time_pt, ref_pt_all, color="C1", lw=0.8, alpha=0.6,
+                   label="Reference")
+        ax_ts.plot(time_pt, nn_pt_all, color="C0", lw=0.8, alpha=0.6,
+                   label="NN")
+        ax_ts.set_ylabel(var_file)
+        ax_ts.set_title(with_meta(f"{args.point_name} ({area_lbl}), {ylab}"))
+        ax_ts.legend(frameon=False)
+        err_pt = nn_pt_all - ref_pt_all
+        ax_err.plot(time_pt, err_pt, color="C3", lw=0.8, alpha=0.7)
+        ax_err.axhline(0, color="k", lw=1)
+        ax_err.set_ylabel("Error (NN - reference, area mean)")
+        ax_err.set_xlabel("time")
+        plt.tight_layout()
+        fig.savefig(out_dir / f"{tag}_{kind}_{pname}_timeseries.png",
+                    dpi=150)
+        plt.close(fig)
 
     print("All figures written.")
 
