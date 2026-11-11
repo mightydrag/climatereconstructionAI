@@ -29,6 +29,13 @@ PASS 2 (only with --deseasonalize, per year):
 Outputs (into --output-dir):
   <var>_maps_<y0>-<y1>.nc, <var>_stats_<y0>-<y1>.txt, *.png
 
+POINT STATISTICS (single grid cell, default: Hamburg at 53.5511N/9.9937E,
+see --point-lat/--point-lon/--point-name; disable with --no-point-stats):
+  the nearest grid cell to the point is extracted in the same per-year
+  passes; bias/RMSE/MAE/EV/correlation/R2 for that cell (and their
+  deseasonalized counterparts) are added to the stats file, plus a
+  time-series figure <var>_point_<name>_<y0>-<y1>_timeseries.png.
+
 File-name patterns and --mask-file support two variable placeholders:
     {var}    -> the variable/config name, e.g. 'relative_humidity'
     {var_nc} -> the NetCDF variable name, e.g. '2r' (VAR_FILE_DEFAULTS;
@@ -129,6 +136,18 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--mask-mode", choices=("keep", "exclude"), default="keep",
                    help="'keep': keep ONLY cells where mask == value; "
                         "'exclude': NaN the cells where mask == value")
+    p.add_argument("--point-name", default="Hamburg",
+                   help="Name of the point location for the point statistics "
+                        "(used in the stats file and figure names)")
+    p.add_argument("--point-lat", type=float, default=53.5511,
+                   help="Latitude of the point for the point statistics; the "
+                        "nearest grid cell is used (default: Hamburg)")
+    p.add_argument("--point-lon", type=float, default=9.9937,
+                   help="Longitude of the point for the point statistics; the "
+                        "nearest grid cell is used (default: Hamburg)")
+    p.add_argument("--no-point-stats", action="store_true",
+                   help="Disable the point statistics (default: enabled for "
+                        "the --point-lat/--point-lon location)")
     return p.parse_args()
 
 
@@ -588,6 +607,45 @@ def build_keep_mask(args, mask_file, ref_file):
 
 
 # ------------------------------------------------------------------
+# Point (single grid cell) statistics, e.g. for a city like Hamburg
+# ------------------------------------------------------------------
+def select_point(da, lat_name, lon_name, lat, lon):
+    """Nearest grid cell to (lat, lon). Returns (time_series, sel_lat,
+    sel_lon); the scalar lat/lon coords are dropped from the series so it
+    can live in the same stats Dataset as the (lat, lon) maps."""
+    pt = da.sel({lat_name: lat, lon_name: lon}, method="nearest")
+    sel = (float(pt[lat_name]), float(pt[lon_name]))
+    return pt.drop_vars([lat_name, lon_name], errors="ignore"), sel
+
+
+def point_stats(nn_pt, ref_pt):
+    """Scalar verification statistics of one point time series (NaN-aware).
+
+    nn_pt / ref_pt are 1-D arrays over time. Returns a dict with the
+    number of valid pairs, bias, RMSE, MAE, explained variance,
+    correlation and R^2 (NaN when fewer than 2 valid pairs exist)."""
+    nn_v = np.asarray(nn_pt, dtype="float64").ravel()
+    ref_v = np.asarray(ref_pt, dtype="float64").ravel()
+    finite = np.isfinite(nn_v) & np.isfinite(ref_v)
+    nn_v = nn_v[finite]
+    ref_v = ref_v[finite]
+    out = {"n": int(nn_v.size), "bias": np.nan, "rmse": np.nan,
+           "mae": np.nan, "ev": np.nan, "corr": np.nan, "r2": np.nan}
+    if nn_v.size < 2:
+        return out
+    err = nn_v - ref_v
+    var_ref = np.var(ref_v)
+    corr = float(np.corrcoef(ref_v, nn_v)[0, 1])
+    out["bias"] = float(err.mean())
+    out["rmse"] = float(np.sqrt(np.mean(err ** 2)))
+    out["mae"] = float(np.mean(np.abs(err)))
+    out["ev"] = float(1 - np.var(err) / var_ref) if var_ref > 0 else np.nan
+    out["corr"] = corr
+    out["r2"] = corr ** 2
+    return out
+
+
+# ------------------------------------------------------------------
 # Main
 # ------------------------------------------------------------------
 def main() -> None:
@@ -636,6 +694,12 @@ def main() -> None:
     # ---- optional cell mask from a file -------------------------------
     keep_mask = build_keep_mask(args, mask_file, str(files[years[0]][1]))
 
+    # ---- point (single grid cell, default Hamburg) ---------------------
+    point_stats_on = not args.no_point_stats
+    point_nn, point_ref = [], []
+    point_nn_anom, point_ref_anom = [], []
+    point_cell = None  # (sel_lat, sel_lon) of the nearest grid cell
+
     bias_maps, mse_maps, ev_maps, corr_maps = [], [], [], []
     q_maps = {q: [] for q in error_quantiles}
     nn_qq_samples, ref_qq_samples = [], []
@@ -656,6 +720,19 @@ def main() -> None:
                             chunks, var_file, var_file_nn=var_file_nn,
                             keep_mask=keep_mask, rename_nn=args.rename_nn)
         err = nn - ref
+
+        # point time series (nearest grid cell), computed in the same pass
+        if point_stats_on:
+            p_lat, p_lon = detect_spatial_names(ref)
+            nn_pt, sel = select_point(nn, p_lat, p_lon,
+                                      args.point_lat, args.point_lon)
+            ref_pt, _ = select_point(ref, p_lat, p_lon,
+                                     args.point_lat, args.point_lon)
+            if point_cell is None:
+                point_cell = sel
+                print(f"Point '{args.point_name}': requested "
+                      f"({args.point_lat}, {args.point_lon}) -> grid cell "
+                      f"({point_cell[0]:.4f}, {point_cell[1]:.4f})")
 
         # per-grid-cell statistics (lazy)
         bias_y = err.mean("time")
@@ -696,6 +773,9 @@ def main() -> None:
             "nn_sub": nn_sub,
             "ref_sub": ref_sub,
         }
+        if point_stats_on:
+            stats_members["nn_pt"] = nn_pt
+            stats_members["ref_pt"] = ref_pt
 
         # day-of-year climatological sums (for pass 2), lazy
         # NOTE: group by the EXPLICIT day-of-year array, not the string
@@ -725,6 +805,9 @@ def main() -> None:
 
         nn_qq_samples.append(stats["nn_sub"].values.ravel().astype("float32"))
         ref_qq_samples.append(stats["ref_sub"].values.ravel().astype("float32"))
+        if point_stats_on:
+            point_nn.append(stats["nn_pt"])
+            point_ref.append(stats["ref_pt"])
         print(f"    valid points: {int(stats['cnt'])}")
 
         if deseasonalize:
@@ -792,6 +875,14 @@ def main() -> None:
             nn_anom = nn - clim_nn.sel(dayofyear=doy)
             err_a = nn_anom - ref_anom
 
+            # deseasonalized point time series (same pass)
+            if point_stats_on:
+                p_lat, p_lon = detect_spatial_names(ref)
+                nn_pt_a, _ = select_point(nn_anom, p_lat, p_lon,
+                                          args.point_lat, args.point_lon)
+                ref_pt_a, _ = select_point(ref_anom, p_lat, p_lon,
+                                           args.point_lat, args.point_lon)
+
             ref_var_a = ref_anom.var("time")
             ev_a = xr.where(ref_var_a > 1e-12,
                             1 - err_a.var("time") / ref_var_a, np.nan)
@@ -813,6 +904,9 @@ def main() -> None:
                 "cnr": (nn_anom * ref_anom).sum(),
                 "cnt": err_a.count(),
             }
+            if point_stats_on:
+                m["nn_pt_a"] = nn_pt_a
+                m["ref_pt_a"] = ref_pt_a
             stats2 = xr.Dataset({"ev": ev_a, "corr": corr_a, **m}).compute()
 
             ev_anom_maps.append(stats2["ev"])
@@ -825,6 +919,9 @@ def main() -> None:
             ss_n += float(stats2["ssn"])
             c_nr += float(stats2["cnr"])
             n_a += int(stats2["cnt"])
+            if point_stats_on:
+                point_nn_anom.append(stats2["nn_pt_a"])
+                point_ref_anom.append(stats2["ref_pt_a"])
 
         ev_anom_map = mean_over_years(ev_anom_maps)
         corr_anom_map = mean_over_years(corr_anom_maps)
@@ -840,6 +937,36 @@ def main() -> None:
 
         print(f"Anomaly explained variance:  {ev_anom_scalar:.4f}")
         print(f"Anomaly correlation:         {corr_anom_scalar:.4f}")
+
+    # ---------------- point statistics (e.g. Hamburg) -------------------
+    point_results = point_results_anom = None
+    if point_stats_on:
+        nn_pt_all = xr.concat(point_nn, dim="time")
+        ref_pt_all = xr.concat(point_ref, dim="time")
+        point_results = point_stats(nn_pt_all.values, ref_pt_all.values)
+        print(f"Point '{args.point_name}' (grid cell "
+              f"{point_cell[0]:.4f}, {point_cell[1]:.4f}), raw fields:")
+        print(f"  bias={point_results['bias']:.4f}  "
+              f"RMSE={point_results['rmse']:.4f}  "
+              f"MAE={point_results['mae']:.4f}")
+        print(f"  EV={point_results['ev']:.4f}  "
+              f"corr={point_results['corr']:.4f}  "
+              f"R2={point_results['r2']:.4f}  "
+              f"(n={point_results['n']})")
+        if point_results["n"] < 2:
+            print(f"WARNING: point '{args.point_name}' has fewer than 2 "
+                  "valid values (masked out?) -> point statistics are NaN.")
+        if deseasonalize:
+            nn_pt_a = xr.concat(point_nn_anom, dim="time")
+            ref_pt_a = xr.concat(point_ref_anom, dim="time")
+            point_results_anom = point_stats(nn_pt_a.values, ref_pt_a.values)
+            print(f"Point '{args.point_name}', deseasonalized:")
+            print(f"  EV={point_results_anom['ev']:.4f}  "
+                  f"corr={point_results_anom['corr']:.4f}  "
+                  f"R2={point_results_anom['r2']:.4f}  "
+                  f"bias={point_results_anom['bias']:.4f}  "
+                  f"RMSE={point_results_anom['rmse']:.4f}  "
+                  f"(n={point_results_anom['n']})")
 
     # ---------------- save maps + stats ---------------------------------
     maps = {
@@ -882,6 +1009,24 @@ def main() -> None:
             f.write(f"Anomaly explained variance:    {ev_anom_scalar:.6f}\n")
             f.write(f"Anomaly correlation:           {corr_anom_scalar:.6f}\n")
         f.write(f"Valid space-time points:        {n_total}\n")
+        if point_stats_on:
+            f.write(f"\nPoint statistics ({args.point_name}, requested "
+                    f"{args.point_lat}/{args.point_lon}, grid cell "
+                    f"{point_cell[0]:.4f}/{point_cell[1]:.4f}), raw fields:\n")
+            f.write(f"  Point bias (NN - reference):  {point_results['bias']:.6f}\n")
+            f.write(f"  Point RMSE:                   {point_results['rmse']:.6f}\n")
+            f.write(f"  Point MAE:                    {point_results['mae']:.6f}\n")
+            f.write(f"  Point explained variance:     {point_results['ev']:.6f}\n")
+            f.write(f"  Point correlation:            {point_results['corr']:.6f}\n")
+            f.write(f"  Point R2 (squared corr.):     {point_results['r2']:.6f}\n")
+            f.write(f"  Point valid time steps:       {point_results['n']}\n")
+            if deseasonalize:
+                f.write(f"Point statistics ({args.point_name}), deseasonalized:\n")
+                f.write(f"  Point anomaly bias:           {point_results_anom['bias']:.6f}\n")
+                f.write(f"  Point anomaly RMSE:           {point_results_anom['rmse']:.6f}\n")
+                f.write(f"  Point anomaly EV:             {point_results_anom['ev']:.6f}\n")
+                f.write(f"  Point anomaly correlation:    {point_results_anom['corr']:.6f}\n")
+                f.write(f"  Point anomaly R2:             {point_results_anom['r2']:.6f}\n")
     print(f"Stats written to {stats_path}")
 
     # ---------------- figures ------------------------------------------
@@ -1048,6 +1193,31 @@ def main() -> None:
     plt.tight_layout()
     fig.savefig(out_dir / f"{tag}_value_distribution.png", dpi=150)
     plt.close(fig)
+
+    # --- point time series (e.g. Hamburg) ---------------------------------
+    if point_stats_on:
+        nn_pt_all = xr.concat(point_nn, dim="time")
+        ref_pt_all = xr.concat(point_ref, dim="time")
+        time_pt = nn_pt_all["time"]
+        pname = args.point_name.lower().replace(" ", "_")
+        fig, (ax_ts, ax_err) = plt.subplots(2, 1, figsize=(13, 7),
+                                            sharex=True)
+        ax_ts.plot(time_pt, ref_pt_all, color="C1", lw=0.8, alpha=0.6,
+                   label="Reference")
+        ax_ts.plot(time_pt, nn_pt_all, color="C0", lw=0.8, alpha=0.6,
+                   label="NN")
+        ax_ts.set_ylabel(var_file)
+        ax_ts.set_title(f"{args.point_name} (grid cell "
+                        f"{point_cell[0]:.2f}, {point_cell[1]:.2f}), {ylab}")
+        ax_ts.legend(frameon=False)
+        err_pt = nn_pt_all - ref_pt_all
+        ax_err.plot(time_pt, err_pt, color="C3", lw=0.8, alpha=0.7)
+        ax_err.axhline(0, color="k", lw=1)
+        ax_err.set_ylabel("Error (NN - reference)")
+        ax_err.set_xlabel("time")
+        plt.tight_layout()
+        fig.savefig(out_dir / f"{tag}_point_{pname}_timeseries.png", dpi=150)
+        plt.close(fig)
 
     print("All figures written.")
 
