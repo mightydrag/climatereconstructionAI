@@ -236,6 +236,9 @@ CHUNK_TIME="30"                            # dask chunk size along time
 DESEASONALIZE="1"                           # 1 = remove day-of-year climatology from both
                                             #     fields before computing EV/correlation
                                             #     (needs >= 2 years; adds a second pass)
+POINT_RADIUS_KM="0"                         # Hamburg point stats: >0 pools them over ALL grid cells
+                                            #     within this radius (km) of Hamburg;
+                                            #     0 = only the nearest grid cell (e.g. 50)
 
 # --------------------------------------------------------------------
 # 2b. OPTIONAL CELL MASK (NetCDF on the same or a similar lat/lon grid)
@@ -285,7 +288,7 @@ LOG_FILE="${LOG_DIR}/${JOB_NAME}_%j.log"    # %j -> Slurm job ID
 # --------------------------------------------------------------------
 export PYTHON_SCRIPT PATH_ORIGINAL PATH_NN VAR VAR_FILE YEAR_MIN YEAR_MAX
 export OUTPUT_DIR RENAME_NN QUANTILES QUANTILE_STRIDE QQ_STRIDE SCALE CHUNK_TIME
-export DESEASONALIZE
+export DESEASONALIZE POINT_RADIUS_KM
 export MASK_FILE MASK_VAR MASK_VALUE MASK_MODE
 
 # --------------------------------------------------------------------

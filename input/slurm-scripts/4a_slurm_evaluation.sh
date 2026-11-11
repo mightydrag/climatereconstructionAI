@@ -120,6 +120,7 @@ python3 "${PYTHON_SCRIPT}" \
     --chunk-time      "${CHUNK_TIME:-30}" \
     --mask-value      "${MASK_VALUE:-1}" \
     --mask-mode       "${MASK_MODE:-keep}" \
+    --point-radius-km "${POINT_RADIUS_KM:-0}" \
     ${DESEASONALIZE_FLAG}
 
 echo "=============================================================="
