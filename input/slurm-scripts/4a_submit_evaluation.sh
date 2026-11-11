@@ -49,6 +49,12 @@ declare -A VAR_FILE_MAP=(
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"  # folder of this script
 
+list_known_vars() {  # print the VAR_FILE_MAP as "key -> file-var" lines (stderr)
+    for key in "${!VAR_FILE_MAP[@]}"; do
+        echo "  ${key} -> ${VAR_FILE_MAP[${key}]}" >&2
+    done
+}
+
 # STANDARD DIRECTORY that holds your config files:
 #   --config NAME  -> resolved to ${CONFIG_DIR}/NAME
 #   ./submit.sh    -> automatically uses ${CONFIG_DIR}/${DEFAULT_CONFIG_NAME} if present
@@ -105,32 +111,21 @@ usage() {
     echo "  $0 --var t2m --data-tag cerra-germany-0.05x0.05-sorted --years 2016 2020"
 }
 
+need_value() {  # need_value <flag> <caller-arg-count> <min-args> <hint>
+    [[ "$2" -ge "$3" ]] || { echo "ERROR: $1 needs $4" >&2; usage >&2; exit 1; }
+}
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --config|-c)
-            [[ $# -ge 2 ]] || { echo "ERROR: $1 needs a value" >&2; usage >&2; exit 1; }
-            CONFIG_FILE="$2"; shift 2 ;;
-        --no-config)
-            NO_CONFIG="1"; shift 1 ;;
-        --var|-v)
-            [[ $# -ge 2 ]] || { echo "ERROR: $1 needs a value" >&2; usage >&2; exit 1; }
-            VAR="$2"; shift 2 ;;
-        --data-tag|-d)
-            [[ $# -ge 2 ]] || { echo "ERROR: $1 needs a value" >&2; usage >&2; exit 1; }
-            DATA_TAG="$2"; shift 2 ;;
-        --year-min)
-            [[ $# -ge 2 ]] || { echo "ERROR: $1 needs a value" >&2; usage >&2; exit 1; }
-            YEAR_MIN="$2"; shift 2 ;;
-        --year-max)
-            [[ $# -ge 2 ]] || { echo "ERROR: $1 needs a value" >&2; usage >&2; exit 1; }
-            YEAR_MAX="$2"; shift 2 ;;
-        --years)
-            [[ $# -ge 3 ]] || { echo "ERROR: --years needs two values: --years Y1 Y2" >&2; usage >&2; exit 1; }
-            YEAR_MIN="$2"; YEAR_MAX="$3"; shift 3 ;;
-        -h|--help)
-            usage; exit 0 ;;
-        *)
-            echo "ERROR: unknown option '$1'" >&2; usage >&2; exit 1 ;;
+        --config|-c)   need_value "$1" "$#" 2 "a value (FILE)";     CONFIG_FILE="$2"; shift 2 ;;
+        --no-config)   NO_CONFIG="1"; shift 1 ;;
+        --var|-v)      need_value "$1" "$#" 2 "a value (NAME)";     VAR="$2"; shift 2 ;;
+        --data-tag|-d) need_value "$1" "$#" 2 "a value (TAG)";      DATA_TAG="$2"; shift 2 ;;
+        --year-min)    need_value "$1" "$#" 2 "a value (YEAR)";     YEAR_MIN="$2"; shift 2 ;;
+        --year-max)    need_value "$1" "$#" 2 "a value (YEAR)";     YEAR_MAX="$2"; shift 2 ;;
+        --years)       need_value "$1" "$#" 3 "two values (Y1 Y2)"; YEAR_MIN="$2"; YEAR_MAX="$3"; shift 3 ;;
+        -h|--help)     usage; exit 0 ;;
+        *)             echo "ERROR: unknown option '$1'" >&2; usage >&2; exit 1 ;;
     esac
 done
 
@@ -169,41 +164,36 @@ if [[ -n "${CONFIG_FILE}" ]]; then
         exit 1
     fi
 
-    # Evaluation variable = LAST entry of --data-types
+    # cfg_set_if_unset <var-name> <config-key>: fill the variable from the
+    # config file only when it was NOT given on the command line
+    cfg_set_if_unset() {
+        local var_name="$1" key="$2" v
+        if [[ -z "${!var_name}" ]]; then
+            v="$(cfg_get "${key}")"
+            [[ -n "${v}" ]] && printf -v "${var_name}" '%s' "${v}"
+        fi
+    }
+
+    # Evaluation variable = LAST entry of --data-types (reverse lookup in VAR_FILE_MAP)
     if [[ -z "${VAR}" ]]; then
         data_types="$(cfg_get --data-types)"
         if [[ -n "${data_types}" ]]; then
             var_file_cfg="${data_types##*,}"          # e.g. "tp"
-            VAR=""
             for key in "${!VAR_FILE_MAP[@]}"; do
-                if [[ "${VAR_FILE_MAP[${key}]}" == "${var_file_cfg}" ]]; then
-                    VAR="${key}"
-                    break
-                fi
+                [[ "${VAR_FILE_MAP[${key}]}" == "${var_file_cfg}" ]] && { VAR="${key}"; break; }
             done
             if [[ -z "${VAR}" ]]; then
                 echo "ERROR: the last --data-types entry '${var_file_cfg}' is not a known variable." >&2
                 echo "       Known variables:" >&2
-                for key in "${!VAR_FILE_MAP[@]}"; do
-                    echo "  ${key} -> ${VAR_FILE_MAP[${key}]}" >&2
-                done
+                list_known_vars
                 exit 1
             fi
         fi
     fi
 
-    if [[ -z "${DATA_TAG}" ]]; then
-        v="$(cfg_get --run-name)"
-        if [[ -n "${v}" ]]; then DATA_TAG="${v}"; fi
-    fi
-    if [[ -z "${YEAR_MIN}" ]]; then
-        v="$(cfg_get --start-year)"
-        if [[ -n "${v}" ]]; then YEAR_MIN="${v}"; fi
-    fi
-    if [[ -z "${YEAR_MAX}" ]]; then
-        v="$(cfg_get --end-year)"
-        if [[ -n "${v}" ]]; then YEAR_MAX="${v}"; fi
-    fi
+    cfg_set_if_unset DATA_TAG  --run-name
+    cfg_set_if_unset YEAR_MIN  --start-year
+    cfg_set_if_unset YEAR_MAX  --end-year
 fi
 
 # Final defaults (only used if neither CLI nor config provided a value)
@@ -216,9 +206,7 @@ VAR_FILE="${VAR_FILE_MAP[${VAR}]:-}"       # looked up from the map above
 
 if [[ -z "${VAR_FILE}" ]]; then
     echo "ERROR: unknown VAR '${VAR}'. Known variables:" >&2
-    for key in "${!VAR_FILE_MAP[@]}"; do
-        echo "  ${key} -> ${VAR_FILE_MAP[${key}]}" >&2
-    done
+    list_known_vars
     exit 1
 fi
 

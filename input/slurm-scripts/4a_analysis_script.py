@@ -29,51 +29,10 @@ PASS 2 (only with --deseasonalize, per year):
 Outputs (into --output-dir):
   <var>_maps_<y0>-<y1>.nc, <var>_stats_<y0>-<y1>.txt, *.png
 
-Patched in this version:
-  * Pass 1: removed an undefined leftover positional argument in the
-    load_pair() call (NameError: 'seasonalize').
-  * Pass 2: the scalar "Anomaly correlation" now computes
-    corr(NN anomaly, reference anomaly). The previous formula returned
-    corr(error, reference anomaly), which is misleadingly negative for a
-    good model.
-  * The NN output file may use a different NetCDF variable name than the
-    reference: new --var-file-nn, with auto-detection (single data var in
-    the NN file, else the usual candidates). Coordinate renames
-    (--rename-nn) are now applied BEFORE dask chunking, so NN files with
-    e.g. 'valid_time' coordinates no longer break the
-    open_dataset(chunks=...) call.
-  * If the reference 'time' axis is stored as plain numbers without CF
-    units (xarray cannot decode it -> groupby("time.dayofyear") crashes),
-    it is rebuilt as a calendar-year axis starting Jan 1st of the year
-    in the file name, with the step length inferred from the number of
-    timesteps (one year per file, no leap days).
-  * Day-of-year grouping uses the explicit .dt.dayofyear array instead
-    of the "time.dayofyear" string: string resolution fails for cftime
-    (object) time axes, e.g. calendar "noleap", while .dt supports both
-    datetime64 and cftime.
-  * Fixed the day-of-year accumulator keys: pass 1 stores "doy_sum_ref"
-    etc. in the per-year dataset, but the accumulators and the
-    climatology code looked them up as "sum_ref" -> KeyError at the end
-    of the first year when --deseasonalize is on.
-  * File-name patterns (--file-pattern-nn, --file-pattern-ref) AND
-    --mask-file now support TWO variable placeholders, because the
-    variable name in the FILE NAMES differs from the variable name INSIDE
-    the files (see VAR_FILE_DEFAULTS):
-        {var}    -> the variable/config name, e.g. 'relative_humidity'
-                    (also used in the mask file names)
-        {var_nc} -> the NetCDF variable name, e.g. '2r'
-                    (VAR_FILE_DEFAULTS; falls back to the config name)
-      Example: with --var relative_humidity,
-        cerra_dm_{var}_ger_{year}.nc            -> cerra_dm_relative_humidity_ger_2016.nc
-        cerra_dm_{var_nc}_ger_{year}.nc         -> cerra_dm_2r_ger_2016.nc
-        cerra_dm_{var}_ger_1985_steady_mask.nc  -> cerra_dm_relative_humidity_ger_1985_steady_mask.nc
-  * The mask file is now checked BEFORE it is opened: a wrong mask path
-    produces a clear FileNotFoundError that lists the available
-    steady-mask files, instead of a cryptic xarray LRU-cache KeyError.
-  * New figure <var>_<y0>-<y1>_value_distribution.png: histogram and
-    empirical CDF comparing the distribution of VALUES of the NN output
-    and the reference (pooled over all years, sub-sampled with
-    --qq-stride) — complements the QQ plot.
+File-name patterns and --mask-file support two variable placeholders:
+    {var}    -> the variable/config name, e.g. 'relative_humidity'
+    {var_nc} -> the NetCDF variable name, e.g. '2r' (VAR_FILE_DEFAULTS;
+                falls back to the config name)
 """
 
 import argparse
@@ -247,30 +206,26 @@ def extract_year(path):
     return int(m[0]) if m else None
 
 
-def pattern_path(base_dir, pattern, var, year):
-    """Join base_dir with the file-name pattern, substituting the tokens
+def subst_tokens(s, var, year=None):
+    """Substitute the file-name tokens in a pattern/path string by plain
+    string replacement (unlike str.format(), stray braces cannot crash the
+    run; an unknown token stays literal and check_files reports it):
       {var}    -> the variable/config name, e.g. 'relative_humidity'
       {var_nc} -> the NetCDF variable name, e.g. '2r'
                   (VAR_FILE_DEFAULTS; falls back to the config name)
-      {year}   -> the year
-    by plain string replacement. Unlike str.format(), stray braces in the
-    pattern cannot crash the run (an unknown token simply stays literal,
-    which check_files then reports as a missing file with a directory
-    listing)."""
-    name = str(pattern)
-    name = name.replace("{var_nc}", VAR_FILE_DEFAULTS.get(str(var), str(var)))
-    name = name.replace("{var}", str(var))
-    name = name.replace("{year}", str(year))
-    return Path(base_dir) / name
-
-
-def fill_tokens(path_str, var):
-    """Substitute the {var} and {var_nc} tokens in a path string
-    (used for --mask-file, where no {year} applies)."""
-    s = str(path_str)
+      {year}   -> the year (only when given; --mask-file has none)
+    """
+    s = str(s)
     s = s.replace("{var_nc}", VAR_FILE_DEFAULTS.get(str(var), str(var)))
     s = s.replace("{var}", str(var))
+    if year is not None:
+        s = s.replace("{year}", str(year))
     return s
+
+
+def pattern_path(base_dir, pattern, var, year):
+    """Join base_dir with the file-name pattern after token substitution."""
+    return Path(base_dir) / subst_tokens(pattern, var, year)
 
 
 def resolve_inputs(args):
@@ -654,7 +609,7 @@ def main() -> None:
     var, path_original, path_nn, files, mask_file = resolve_inputs(args)
     # the mask path may contain {var}/{var_nc} tokens
     if mask_file and "{" in str(mask_file):
-        mask_file = fill_tokens(mask_file, var)
+        mask_file = subst_tokens(mask_file, var)
         print(f"mask file : {mask_file}")
     years = sorted(files)
     tag = f"{var}_{years[0]}-{years[-1]}"
@@ -778,16 +733,16 @@ def main() -> None:
                 doy_acc[k] = v if doy_acc[k] is None else doy_acc[k] + v
 
     # ---------------- aggregate across years ----------------------------
+    def mean_over_years(maps):
+        return xr.concat(maps, dim="year").assign_coords(year=years).mean("year")
+
     scale = args.scale
-    bias_map = xr.concat(bias_maps, dim="year").assign_coords(year=years).mean("year") * scale
-    mse_map = xr.concat(mse_maps, dim="year").assign_coords(year=years).mean("year")
+    bias_map = mean_over_years(bias_maps) * scale
+    mse_map = mean_over_years(mse_maps)
     rmse_map = np.sqrt(mse_map) * scale
-    q_maps_mean = {
-        q: xr.concat(q_maps[q], dim="year").assign_coords(year=years).mean("year") * scale
-        for q in error_quantiles
-    }
-    ev_map = xr.concat(ev_maps, dim="year").assign_coords(year=years).mean("year")
-    corr_map = xr.concat(corr_maps, dim="year").assign_coords(year=years).mean("year")
+    q_maps_mean = {q: mean_over_years(q_maps[q]) * scale for q in error_quantiles}
+    ev_map = mean_over_years(ev_maps)
+    corr_map = mean_over_years(corr_maps)
     r2_map = corr_map ** 2
 
     # ---------------- scalar stats (raw fields) --------------------------
@@ -871,10 +826,8 @@ def main() -> None:
             c_nr += float(stats2["cnr"])
             n_a += int(stats2["cnt"])
 
-        ev_anom_map = xr.concat(ev_anom_maps, dim="year").assign_coords(
-            year=years).mean("year")
-        corr_anom_map = xr.concat(corr_anom_maps, dim="year").assign_coords(
-            year=years).mean("year")
+        ev_anom_map = mean_over_years(ev_anom_maps)
+        corr_anom_map = mean_over_years(corr_anom_maps)
         r2_anom_map = corr_anom_map ** 2
 
         # scalar EV / correlation from pooled anomaly moments
@@ -934,7 +887,8 @@ def main() -> None:
     # ---------------- figures ------------------------------------------
     ylab = f"{years[0]}-{years[-1]}"
 
-    def map_and_hist(da, cmap, vmin, vmax, xlabel, unit_label, fname, title):
+    def map_and_hist(da, cmap, vmin, vmax, xlabel, unit_label, fname, title,
+                     mean_line=True, extra_vlines=(), hist_title=None):
         fig, (ax_map, ax_hist) = plt.subplots(
             1, 2, figsize=(15, 5), gridspec_kw={"width_ratios": [2, 1]}
         )
@@ -945,58 +899,42 @@ def main() -> None:
         vals = vals[np.isfinite(vals)]
         if len(vals):
             ax_hist.hist(vals, bins=51, color="C0", alpha=0.8)
-            ax_hist.axvline(0, color="k", lw=1)
-            ax_hist.axvline(vals.mean(), color="C3", ls="--",
-                           label=f"mean = {vals.mean():.4f}\n"
-                                 f"median = {np.median(vals):.4f}")
+            if mean_line:
+                ax_hist.axvline(0, color="k", lw=1)
+                ax_hist.axvline(vals.mean(), color="C3", ls="--",
+                                label=f"mean = {vals.mean():.4f}\n"
+                                      f"median = {np.median(vals):.4f}")
+            for x, kw in extra_vlines:
+                ax_hist.axvline(x, **kw)
         ax_hist.set_yscale("log")
         ax_hist.set_xlabel(xlabel)
         ax_hist.set_ylabel("Number of grid cells")
-        ax_hist.legend(frameon=False)
+        if hist_title:
+            ax_hist.set_title(hist_title)
+        if ax_hist.get_legend_handles_labels()[1]:
+            ax_hist.legend(frameon=False)
         plt.tight_layout()
         fig.savefig(out_dir / f"{tag}_{fname}.png", dpi=150)
         plt.close(fig)
 
     # --- MSE, bias, RMSE -------------------------------------------------
-    fig, (ax_map, ax_hist) = plt.subplots(
-        1, 2, figsize=(15, 5), gridspec_kw={"width_ratios": [2, 1]}
-    )
-    mse_map.plot(ax=ax_map, cmap="viridis", cbar_kwargs={"label": "MSE"})
-    ax_map.set_title(f"Mean MSE per grid cell, {ylab}")
-    vals = mse_map.values.ravel()
-    vals = vals[np.isfinite(vals)]
-    ax_hist.hist(vals, bins=51, color="C0", alpha=0.8)
-    ax_hist.set_yscale("log")
-    ax_hist.set_xlabel("MSE")
-    ax_hist.set_ylabel("Number of grid cells")
-    ax_hist.set_title("Distribution of per-cell MSE")
-    plt.tight_layout()
-    fig.savefig(out_dir / f"{tag}_mse.png", dpi=150)
-    plt.close(fig)
+    map_and_hist(mse_map, "viridis", None, None, "MSE", "MSE", "mse",
+                 f"Mean MSE per grid cell, {ylab}",
+                 mean_line=False, hist_title="Distribution of per-cell MSE")
 
     vmax = float(np.nanmax(np.abs(bias_map.values)))
     map_and_hist(bias_map, "RdBu_r", -vmax, vmax,
                  "Bias (NN - reference)", "Bias (NN - reference)",
                  "bias", f"Mean bias, {ylab}")
 
-    fig, (ax_map, ax_hist) = plt.subplots(
-        1, 2, figsize=(15, 5), gridspec_kw={"width_ratios": [2, 1]}
-    )
-    rmse_map.plot(ax=ax_map, cmap="viridis", cbar_kwargs={"label": "RMSE"})
-    ax_map.set_title(f"RMSE per grid cell, {ylab}")
-    vals = rmse_map.values.ravel()
-    vals = vals[np.isfinite(vals)]
-    ax_hist.hist(vals, bins=51, color="C0", alpha=0.8)
-    ax_hist.axvline(np.sqrt(np.mean(vals ** 2)), color="C3", ls="--", lw=1,
-                    label=f"global RMSE = {np.sqrt(np.mean(vals ** 2)):.4f}")
-    ax_hist.set_yscale("log")
-    ax_hist.set_xlabel("RMSE")
-    ax_hist.set_ylabel("Number of grid cells")
-    ax_hist.set_title("Distribution of per-cell RMSE")
-    ax_hist.legend(frameon=False)
-    plt.tight_layout()
-    fig.savefig(out_dir / f"{tag}_rmse.png", dpi=150)
-    plt.close(fig)
+    rmse_vals = rmse_map.values.ravel()
+    rmse_vals = rmse_vals[np.isfinite(rmse_vals)]
+    global_rmse = float(np.sqrt(np.mean(rmse_vals ** 2)))
+    map_and_hist(rmse_map, "viridis", None, None, "RMSE", "RMSE", "rmse",
+                 f"RMSE per grid cell, {ylab}", mean_line=False,
+                 extra_vlines=[(global_rmse, {"color": "C3", "ls": "--", "lw": 1,
+                                             "label": f"global RMSE = {global_rmse:.4f}"})],
+                 hist_title="Distribution of per-cell RMSE")
 
     # --- error quantiles --------------------------------------------------
     vmax_q = max(float(np.nanmax(np.abs(m.values))) for m in q_maps_mean.values())
