@@ -55,6 +55,12 @@ class CRAINet(nn.Module):
             )
 
         if cfg.attention:
+            if fusion_enc_layers is None or fusion_pool_layers is None:
+                raise ValueError(
+                    "The attention module requires at least two non-target input "
+                    "streams (--data-names with --n-target-data), otherwise the "
+                    "fusion encoder/pooling layer counts are undefined."
+                )
             self.attention_depth = fusion_enc_layers + fusion_pool_layers
             attention_enc_conv_configs = init_enc_conv_configs(
                 cfg.conv_factor,
