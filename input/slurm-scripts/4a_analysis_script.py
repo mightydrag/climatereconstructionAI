@@ -255,8 +255,9 @@ def pattern_path(base_dir, pattern, var, year):
 
 
 def resolve_inputs(args):
-    """Resolve variable, dirs, the {year: (nn_file, ref_file)} mapping and
-    the mask file. Config-file mode if --args-file is given, else manual."""
+    """Resolve variable, dirs, the {year: (nn_file, ref_file)} mapping, the
+    mask file and the config name (None in manual mode). Config-file mode
+    if --args-file is given, else manual."""
     if args.args_file:
         cfg = parse_args_file(args.args_file)
         base = Path(args.args_file).resolve().parent
@@ -328,7 +329,7 @@ def resolve_inputs(args):
                 print(f"steady mask: {mask_file}"
                       + (" (first of %d listed files)" % len(mask_list)
                          if len(mask_list) > 1 else ""))
-        return var, path_original, str(path_nn), files, mask_file
+        return var, path_original, str(path_nn), files, mask_file, config_name
 
     # ---------------- manual mode ----------------
     missing = [k for k, v in [("--path-original", args.path_original),
@@ -345,7 +346,7 @@ def resolve_inputs(args):
             pattern_path(args.path_original, args.file_pattern_ref, args.var, y))
         for y in years
     }
-    return args.var, args.path_original, args.path_nn, files, args.mask_file
+    return args.var, args.path_original, args.path_nn, files, args.mask_file, None
 
 
 # ------------------------------------------------------------------
@@ -688,7 +689,7 @@ def main() -> None:
     error_quantiles = [float(q) for q in args.quantiles.split(",")]
 
     # ---- resolve inputs (config file or manual) ------------------------
-    var, path_original, path_nn, files, mask_file = resolve_inputs(args)
+    var, path_original, path_nn, files, mask_file, config_name = resolve_inputs(args)
     # the mask path may contain {var}/{var_nc} tokens
     if mask_file and "{" in str(mask_file):
         mask_file = subst_tokens(mask_file, var)
@@ -697,6 +698,7 @@ def main() -> None:
     tag = f"{var}_{years[0]}-{years[-1]}"
     print(f"=== Evaluation: {tag} ===")
     print(f"years     : {years}")
+    print(f"config    : {config_name or 'manual mode'}")
     if not args.args_file:
         print(f"patterns  : nn='{args.file_pattern_nn}' "
               f"ref='{args.file_pattern_ref}'")
@@ -706,6 +708,11 @@ def main() -> None:
     var_file = detect_var_file(args, files[years[0]][1])
     print(f"variable  : {var_file}")
     var_file_nn = detect_var_file_nn(args, str(files[years[0]][0]), var_file)
+    # physical unit of the variable (for the plot metadata), if stored
+    with xr.open_dataset(str(files[years[0]][1])) as ds0:
+        unit = str(ds0[var_file].attrs.get("units", "")).strip()
+    if unit:
+        print(f"unit      : {unit}")
 
     # ---- deseasonalization settings -----------------------------------
     deseasonalize = args.deseasonalize
@@ -1113,6 +1120,13 @@ def main() -> None:
 
     # ---------------- figures ------------------------------------------
     ylab = f"{years[0]}-{years[-1]}"
+    # metadata line shown in the title of EVERY figure:
+    # variable, unit, time span and config name
+    meta_line = (f"{var} ({var_file})" + (f" [{unit}]" if unit else "")
+                 + f", {ylab}, config: {config_name or 'manual mode'}")
+
+    def with_meta(title):
+        return f"{title}\n{meta_line}"
 
     def map_and_hist(da, cmap, vmin, vmax, xlabel, unit_label, fname, title,
                      mean_line=True, extra_vlines=(), hist_title=None):
@@ -1121,7 +1135,7 @@ def main() -> None:
         )
         da.plot(ax=ax_map, cmap=cmap, vmin=vmin, vmax=vmax,
                 cbar_kwargs={"label": unit_label})
-        ax_map.set_title(title)
+        ax_map.set_title(with_meta(title))
         vals = da.values.ravel()
         vals = vals[np.isfinite(vals)]
         if len(vals):
@@ -1175,7 +1189,7 @@ def main() -> None:
     ax.set_yscale("log")
     ax.set_xlabel("Error quantile value (NN - reference)")
     ax.set_ylabel("Number of grid cells")
-    ax.set_title(f"Per-cell error quantiles, {ylab}")
+    ax.set_title(with_meta(f"Per-cell error quantiles, {ylab}"))
     ax.legend(frameon=False)
     plt.tight_layout()
     fig.savefig(out_dir / f"{tag}_error_quantiles_hist.png", dpi=150)
@@ -1188,7 +1202,7 @@ def main() -> None:
         )
         qm.plot(ax=ax_map, cmap="RdBu_r", vmin=-vmax_q, vmax=vmax_q,
                 cbar_kwargs={"label": f"q{int(q * 100):02d} of error (NN - reference)"})
-        ax_map.set_title(f"Error quantile q={q:.2f} per grid cell, {ylab}")
+        ax_map.set_title(with_meta(f"Error quantile q={q:.2f} per grid cell, {ylab}"))
         vals = qm.values.ravel()
         vals = vals[np.isfinite(vals)]
         ax_hist.hist(vals, bins=51, color="C0", alpha=0.8)
@@ -1235,7 +1249,7 @@ def main() -> None:
     ax.plot(ref_sorted[idx], nn_sorted[idx], ".", ms=2, color="C0", alpha=0.5)
     ax.set_xlabel("Reference quantiles")
     ax.set_ylabel("NN quantiles")
-    ax.set_title(f"Pooled QQ plot, {ylab}")
+    ax.set_title(with_meta(f"Pooled QQ plot, {ylab}"))
     ax.legend(frameon=False)
     plt.tight_layout()
     fig.savefig(out_dir / f"{tag}_qq.png", dpi=150)
@@ -1259,7 +1273,7 @@ def main() -> None:
                     label=f"NN mean  = {float(nn_all.mean()):.4f}")
     ax_hist.set_xlabel(f"{var_file} value")
     ax_hist.set_ylabel("Density")
-    ax_hist.set_title(f"Distribution of values, {ylab}")
+    ax_hist.set_title(with_meta(f"Distribution of values, {ylab}"))
     ax_hist.legend(frameon=False)
 
     for data, color, lab in ((ref_all, "C1", "Reference"),
@@ -1269,7 +1283,7 @@ def main() -> None:
         ax_cdf.plot(xs, ys, color=color, lw=1.5, label=lab)
     ax_cdf.set_xlabel(f"{var_file} value")
     ax_cdf.set_ylabel("Cumulative fraction")
-    ax_cdf.set_title(f"Empirical CDF, {ylab}")
+    ax_cdf.set_title(with_meta(f"Empirical CDF, {ylab}"))
     ax_cdf.legend(frameon=False)
 
     plt.tight_layout()
@@ -1296,7 +1310,7 @@ def main() -> None:
         ax_ts.plot(time_pt, nn_pt_all, color="C0", lw=0.8, alpha=0.6,
                    label="NN")
         ax_ts.set_ylabel(var_file)
-        ax_ts.set_title(f"{args.point_name} ({area_lbl}), {ylab}")
+        ax_ts.set_title(with_meta(f"{args.point_name} ({area_lbl}), {ylab}"))
         ax_ts.legend(frameon=False)
         err_pt = nn_pt_all - ref_pt_all
         ax_err.plot(time_pt, err_pt, color="C3", lw=0.8, alpha=0.7)
