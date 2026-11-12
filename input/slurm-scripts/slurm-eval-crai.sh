@@ -5,7 +5,7 @@
 #SBATCH -p gpu
 #SBATCH --exclusive
 #SBATCH --account=kd1418
-#SBATCH --time=00:30:00
+#SBATCH --time=00:15:00
 #SBATCH --mem=480G
 #SBATCH --constraint a100_80
 #SBATCH --mail-user=mats.militzer@studium.uni-hamburg.de
