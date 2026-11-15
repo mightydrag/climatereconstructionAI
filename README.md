@@ -307,6 +307,23 @@ options:
                         Load all the arguments from a text file
 ```
 
+### CERRA experiment configs (Jupyter workflow)
+
+For CERRA experiments, the notebook [`notebooks/cerra_experiment_workflow.ipynb`](notebooks/cerra_experiment_workflow.ipynb)
+generates everything from a single settings cell (cluster paths, region/resolution suffixes, year splits, experiment
+configurations):
+
+1. it checks that all referenced netCDF files exist,
+2. it writes the JSON file lists under `<ml_path>/data/` (`data/{train,val,test}/<var>/`, `data/masks/`, `data/test/masks/`),
+3. it writes the train and eval config files (`--load-from-file` text) into `input/levante/`, named
+   `train-cnn-<config-name>-<run-name>.txt` and `eval-cnn-<config-name>-<run-name>.txt`.
+
+The `--config-name` / `--run-name` pair identifies an experiment (outputs go to `snapshots/`, `logs/` and
+`evaluations/` under exactly that pair) and is kept unique: rerunning the identical experiment is idempotent
+(`unchanged`), while a changed experiment reusing the same names gets a `-rN` suffix (`suffix` mode) or raises
+(`on_duplicate="error"`). The same logic is available as a library via
+`climatereconstructionai.utils.config_generator.CerraConfigWorkflow`.
+
 ## Example
 
 An example can be found in the directory `demo`.
