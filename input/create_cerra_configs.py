@@ -6,9 +6,20 @@
 # - Cell 1 holds **all** settings: paths, experiments, hyperparameters, output folder. Edit only that cell.
 # - The script writes the JSON file lists under `{ml_path}/data/...` (as before) **and** the
 #   train + eval `.txt` configs into `config_out_dir` (default `input/levante`).
-# - File names, `--config-name` and `--run-name` are derived from the settings so every
-#   experiment is uniquely identifiable; if a name is already taken by a *different*
-#   config, a short content hash is appended automatically.
+# - File names, `--config-name` and `--run-name` are derived from the settings.
+#
+# ## Experiment identity and uniqueness
+#
+# `--config-name` + `--run-name` **are** the experiment: the train/eval tools key all outputs
+# on them (`{snapshot,log,evaluation,model}-dir/{config_name}/{run_name}`, see
+# `climatereconstructionai/config.py`), so the pair must be unique per experiment. The run cell
+# therefore keeps a registry of known experiments (config `.txt` files in `config_out_dir` plus
+# existing `snapshots/logs/evaluations` dirs under `run_root`) and enforces:
+#
+# - **same experiment rerun** (identical content) -> files are reused, nothing is rewritten (idempotent)
+# - **name taken by different settings** -> depends on `on_duplicate` (cell 1):
+#   `"error"` (default) stops with a message, `"suffix"` appends a short content hash to
+#   `--run-name` and the file names (a new, unique experiment), `"skip"` keeps the old files.
 
 # %% [markdown]
 # ## 1. Settings -- edit this cell only
@@ -31,6 +42,17 @@ config_out_dir = os.path.join(repo_root, "input", "levante")  # where the .txt c
 
 # set to False to skip the on-disk existence check (e.g. where the data is not mounted)
 verify_files = True
+
+# cwd where crai-train / crai-evaluate run: existing snapshots/logs/evaluations dirs
+# under this root mark an experiment (config-name/run-name) as already run
+run_root = ml_path
+
+# policy when (--config-name, --run-name) already exists with DIFFERENT content:
+#   "error"  -> stop and ask for new settings/names (default: experiments must stay unique)
+#   "suffix" -> append a short content hash to --run-name and the file names (new experiment)
+#   "skip"   -> keep the existing config files unchanged
+# rerunning the SAME experiment (identical content) is always idempotent: files are reused
+on_duplicate = "error"
 
 # ---- region / grid / naming ---------------------------------------------
 reg = "ger"
@@ -372,7 +394,12 @@ def write_config(target_var, input_vars, static_vars):
     return flags, name_steady
 
 # %% [markdown]
-# ## 4. Train/eval config rendering -- names are derived, so experiments stay unique
+# ## 4. Train/eval config rendering + experiment registry
+#
+# Names are derived from the settings. The registry maps each `(config-name, run-name)`
+# experiment to where it already exists (config files in `config_out_dir`, existing
+# `snapshots/logs/evaluations` dirs under `run_root`) and `resolve_experiment` enforces
+# uniqueness of the pair before anything is written.
 # %%
 _UPSAMPLE_SHORT = {"bilinear": "bilin", "nearest": "near"}
 
@@ -490,19 +517,153 @@ def render_eval_config(key, run, run_name, data_types):
     return "\n".join(lines) + "\n"
 
 
-def unique_config_path(stem, text):
-    """Path for a config file: reuse if identical, else append a content hash."""
+def write_config_file(stem, text):
+    """Write a config file and return its path. Reuse the file if identical content is
+    already there; on a file-name collision with different content, hash-suffix the
+    FILE name only (the (config-name, run-name) pair inside was checked by
+    resolve_experiment, so the experiment stays unique)."""
     os.makedirs(config_out_dir, exist_ok=True)
     path = os.path.join(config_out_dir, stem + ".txt")
-    if not os.path.exists(path):
-        return path
-    if open(path).read() == text:
-        return path  # identical config already there -> idempotent
-    tag = hashlib.md5(text.encode()).hexdigest()[:6]
-    return os.path.join(config_out_dir, f"{stem}-{tag}.txt")
+    if os.path.exists(path):
+        if open(path).read() == text:
+            return path  # identical config already there -> idempotent
+        tag = hashlib.md5(text.encode()).hexdigest()[:6]
+        path = os.path.join(config_out_dir, f"{stem}-{tag}.txt")
+    with open(path, "w") as f:
+        f.write(text)
+    return path
+
+
+def parse_config_identity(path):
+    """Return (config_name, run_name) stored in a config .txt file (None if absent)."""
+    cfg_name = run_name = None
+    with open(path) as f:
+        for line in f:
+            parts = line.split()
+            if len(parts) == 2 and parts[0] == "--config-name":
+                cfg_name = parts[1]
+            elif len(parts) == 2 and parts[0] == "--run-name":
+                run_name = parts[1]
+    return cfg_name, run_name
+
+
+def experiment_output_dirs(config_name, run_name):
+    """Output dirs the tools create for this experiment (config.py appends
+    {config_name}/{run_name} to snapshot/log/model/evaluation dirs under the cwd)."""
+    return [
+        os.path.join(run_root, top, config_name, run_name)
+        for top in ("snapshots", "logs", "evaluations")
+    ]
+
+
+def existing_experiments():
+    """Map (config_name, run_name) -> list of locations: config .txt files in
+    config_out_dir plus existing snapshots/logs/evaluations dirs under run_root."""
+    registry = {}
+    if os.path.isdir(config_out_dir):
+        for fn in sorted(os.listdir(config_out_dir)):
+            if fn.endswith(".txt"):
+                path = os.path.join(config_out_dir, fn)
+                pair = parse_config_identity(path)
+                if pair != (None, None):
+                    registry.setdefault(pair, []).append(path)
+    for top in ("snapshots", "logs", "evaluations"):
+        base = os.path.join(run_root, top)
+        if not os.path.isdir(base):
+            continue
+        for cfg_name in sorted(os.listdir(base)):
+            cfg_dir = os.path.join(base, cfg_name)
+            if not os.path.isdir(cfg_dir):
+                continue
+            for run_name in sorted(os.listdir(cfg_dir)):
+                registry.setdefault((cfg_name, run_name), []).append(
+                    os.path.join(cfg_dir, run_name)
+                )
+    return registry
+
+
+def list_experiments(registry=None):
+    """Print all known experiments and return the registry."""
+    if registry is None:
+        registry = existing_experiments()
+    if not registry:
+        print(f"no existing experiments found (config_out_dir={config_out_dir}, run_root={run_root})")
+        return registry
+    print(f"existing experiments: {len(registry)}")
+    for (cfg_name, run_name), locations in sorted(registry.items()):
+        print(f"  {cfg_name} / {run_name}")
+        for loc in locations:
+            print(f"      {loc}")
+    return registry
+
+
+def resolve_experiment(key, run_name, train_stem, eval_stem, train_text, eval_text, registry):
+    """Enforce that (config-name, run-name) uniquely identifies one experiment.
+
+    Returns a dict with keys: action, run_name, train_stem, eval_stem, train_text,
+    eval_text, train_path, eval_path. action is one of:
+      "new"      -> nothing exists yet, write both files
+      "reused"   -> identical experiment already on disk (idempotent rerun)
+      "suffixed" -> name taken by different content, hash suffix makes it unique
+      "skipped"  -> name taken by different content, existing files are kept
+    """
+    pair = (key, run_name)
+    locations = registry.get(pair, [])
+    base = dict(run_name=run_name, train_stem=train_stem, eval_stem=eval_stem,
+                train_text=train_text, eval_text=eval_text,
+                train_path=None, eval_path=None)
+    if not locations:
+        base["action"] = "new"
+        return base
+    files = [p for p in locations if p.endswith(".txt") and os.path.isfile(p)]
+    texts = {open(p).read() for p in files}
+    if files and train_text in texts and eval_text in texts:
+        base.update(
+            action="reused",
+            train_path=next(p for p in files if open(p).read() == train_text),
+            eval_path=next(p for p in files if open(p).read() == eval_text),
+        )
+        return base
+    if on_duplicate == "error":
+        where = "\n    ".join(locations)
+        raise SystemExit(
+            "ERROR: experiment (--config-name, --run-name) already exists with different settings:\n"
+            f"  --config-name {key}  --run-name {run_name}\n"
+            f"  existing:\n    {where}\n"
+            "  Both would write into the same snapshots/logs/evaluations dirs. Change the\n"
+            "  settings (CONFIGS['...']['run'] or 'name_suffix') so the experiment gets a new\n"
+            "  name, or set on_duplicate = 'suffix' (auto hash suffix) / 'skip' (keep old)."
+        )
+    if on_duplicate == "skip":
+        base["action"] = "skipped"
+        base["train_path"] = next(
+            (p for p in files if os.path.basename(p).startswith(train_stem)), None)
+        base["eval_path"] = next(
+            (p for p in files if os.path.basename(p).startswith(eval_stem)), None)
+        return base
+    # on_duplicate == "suffix": make the experiment unique with a content hash
+    tag = hashlib.md5((train_text + "||" + eval_text).encode()).hexdigest()[:6]
+    run_name2 = f"{run_name}-{tag}"
+    if (key, run_name2) in registry:
+        raise SystemExit(f"ERROR: suffixed run-name {run_name2!r} is also taken")
+    line_old = f"--run-name {run_name}\n"
+    line_new = f"--run-name {run_name2}\n"
+    base.update(
+        action="suffixed",
+        run_name=run_name2,
+        train_stem=f"{train_stem}-{tag}",
+        eval_stem=f"{eval_stem}-{tag}",
+        train_text=train_text.replace(line_old, line_new),
+        eval_text=eval_text.replace(line_old, line_new),
+    )
+    return base
 
 # %% [markdown]
-# ## 5. Run: check files -> write JSONs -> write train/eval configs
+# ## 5. Run: check files -> write JSONs -> resolve experiment uniqueness -> write configs
+#
+# For every selected config the (config-name, run-name) pair is looked up in the
+# registry first (see section 4): identical rerun -> reused, conflicting name ->
+# `on_duplicate` policy applies. Only then are the `.txt` files written.
 # %%
 # ---- resolve the selection once, fail early on a bad name ----
 if selected is None:
@@ -545,8 +706,12 @@ if verify_files:
 else:
     print("verify_files=False -> skipping on-disk check. Writing JSONs and configs...")
 
+# ---- registry of already known experiments (config files + output dirs) ----
+registry = list_experiments()
+
 os.makedirs(config_out_dir, exist_ok=True)
 written = []
+summary = []
 
 for key, cfg in run_configs.items():
     target_var = cfg.get("target", key)
@@ -562,20 +727,31 @@ for key, cfg in run_configs.items():
     train_text = render_train_config(key, run, run_name, flags, name_steady, target_var, data_types)
     eval_text = render_eval_config(key, run, run_name, data_types)
 
-    train_path = unique_config_path(train_stem, train_text)
-    eval_path = unique_config_path(eval_stem, eval_text)
-    with open(train_path, "w") as f:
-        f.write(train_text)
-    with open(eval_path, "w") as f:
-        f.write(eval_text)
-    written += [train_path, eval_path]
+    res = resolve_experiment(key, run_name, train_stem, eval_stem, train_text, eval_text, registry)
+    action = res["action"]
+    if action in ("new", "suffixed"):
+        res["train_path"] = write_config_file(res["train_stem"], res["train_text"])
+        res["eval_path"] = write_config_file(res["eval_stem"], res["eval_text"])
+        registry.setdefault((key, res["run_name"]), []).extend(
+            [res["train_path"], res["eval_path"]]
+        )
+    written += [p for p in (res["train_path"], res["eval_path"]) if p]
+    out_dirs = [d for d in experiment_output_dirs(key, res["run_name"]) if os.path.isdir(d)]
 
+    summary.append((key, res["run_name"], action, res["train_path"], res["eval_path"], out_dirs))
     print()
-    print(f"==== {key} (target {target_var}) : config-name={key} run-name={run_name} ====")
-    print(f"  train: {train_path}")
-    print(f"  eval : {eval_path}")
-    print(f"  submit train: ./input/slurm-scripts/submit-train-cerra.sh {os.path.basename(train_path)}")
-    print(f"  submit eval : ./input/slurm-scripts/submit-eval-cerra.sh {os.path.basename(eval_path)}")
+    print(f"==== {key} (target {target_var}) : config-name={key} run-name={res['run_name']} [{action}] ====")
+    print(f"  train: {res['train_path']}")
+    print(f"  eval : {res['eval_path']}")
+    if out_dirs:
+        print(f"  WARNING: existing output dirs for this experiment: {', '.join(out_dirs)}")
+    if action in ("new", "suffixed"):
+        print(f"  submit train: ./input/slurm-scripts/submit-train-cerra.sh {os.path.basename(res['train_path'])}")
+        print(f"  submit eval : ./input/slurm-scripts/submit-eval-cerra.sh {os.path.basename(res['eval_path'])}")
 
 print()
-print(f"done -> {len(written)} config file(s) written to {config_out_dir}")
+print("experiment summary (config-name / run-name):")
+for key, rn, action, train_path, eval_path, out_dirs in summary:
+    print(f"  [{action:8s}] {key} / {rn}")
+print()
+print(f"done -> {len(written)} config file(s) in {config_out_dir}")
