@@ -15,6 +15,7 @@ set -euo pipefail
 # --- settings --------------------------------------------------------------
 PREFIX="train-cnn-cerra-"
 JOB_SCRIPT="slurm-train-crai.sh"   # the sbatch file with the SBATCH resource headers
+REPO_DIR="${REPO_DIR:-/work/uo1075/u244085/trees_in_the_city/ML_downscaling/Physics-Informed-CNN-Reconstructions}"
 LOG_DIR="/work/uo1075/u244085/trees_in_the_city/ML_downscaling/Physics-Informed-CNN-Reconstructions/input/slurm-scripts/train_slurm_output"
 JOB_NAME_PREFIX="crai-training"
 DEFAULT_CONFIG="train-cnn-cerra-t2m.txt"
@@ -37,6 +38,22 @@ if [[ -z "$TAG" ]]; then
 fi
 
 CONFIG_FILE="$BASENAME"
+
+# --- check that the config file actually exists before submitting ----------
+# an existing path given directly is used as-is; a bare name is resolved
+# against the repo's input/levante/ directory (where the workflow writes them)
+if [[ -f "$CONFIG_FILE" ]]; then
+    CONFIG_PATH="$CONFIG_FILE"
+else
+    CONFIG_PATH="$REPO_DIR/input/levante/$CONFIG_FILE"
+fi
+if [[ ! -f "$CONFIG_PATH" ]]; then
+    echo "ERROR: config file not found: $CONFIG_FILE"
+    echo "       looked at: $CONFIG_PATH"
+    echo "       available configs in $REPO_DIR/input/levante/:"
+    ls "$REPO_DIR/input/levante/" 2>/dev/null | grep "^${PREFIX}" | sed 's/^/         /' >&2
+    exit 1
+fi
 
 echo "Submitting job for config: $CONFIG_FILE"
 echo "  job name : ${JOB_NAME_PREFIX}-${TAG}"

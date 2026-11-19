@@ -8,7 +8,12 @@ REPO_DIR="${REPO_DIR:-/work/uo1075/u244085/trees_in_the_city/ML_downscaling/Phys
 JOB_SCRIPT="${JOB_SCRIPT:-$REPO_DIR/input/slurm-scripts/slurm-eval-crai.sh}"
 CONFIG_FILE="${1:-eval-cnn-cerra-t2m-ger-el5-single-l0.txt}"
 CONFIG_PATH="$REPO_DIR/input/levante/$CONFIG_FILE"
-[ -f "$CONFIG_PATH" ] || { echo "config not found: $CONFIG_PATH"; exit 1; }
+if [[ ! -f "$CONFIG_PATH" ]]; then
+    echo "ERROR: config not found: $CONFIG_PATH"
+    echo "       available configs in $REPO_DIR/input/levante/:"
+    ls "$REPO_DIR/input/levante/" 2>/dev/null | grep '^eval-cnn-cerra-' | sed 's/^/         /' >&2
+    exit 1
+fi
 
 LOG_DIR="eval_slurm_output"
 mkdir -p "$LOG_DIR"
