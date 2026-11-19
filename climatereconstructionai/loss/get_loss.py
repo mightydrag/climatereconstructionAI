@@ -52,7 +52,6 @@ class loss_criterion(torch.nn.Module):
 
         self.criterions = []
         self.tensors = ['output', 'gt', 'mask']
-        self.aliases = {}
         style_added = False
 
         for loss, lambda_ in lambda_dict.items():
@@ -77,7 +76,6 @@ class loss_criterion(torch.nn.Module):
 
                 elif loss == 'tv_valid':
                     self.criterions.append(TotalVariationLossValid().to(cfg.device))
-                    self.aliases['tv_valid'] = 'tv'
 
                 elif loss == 'precip':
                     self.criterions.append(PrecipLoss(getattr(cfg, 'precip_loss_alpha', 1.0)).to(cfg.device))
@@ -85,7 +83,6 @@ class loss_criterion(torch.nn.Module):
 
                 elif loss == 'precip_valid':
                     self.criterions.append(PrecipLossValid(getattr(cfg, 'precip_loss_alpha', 1.0)).to(cfg.device))
-                    self.aliases['precip_valid'] = 'precip'
 
                 elif loss == 'bern':
                     self.criterions.append(BernoulliLoss(getattr(cfg, 'bern_pos_weight', 1.0),
@@ -95,7 +92,6 @@ class loss_criterion(torch.nn.Module):
                 elif loss == 'bern_valid':
                     self.criterions.append(BernoulliLossValid(getattr(cfg, 'bern_pos_weight', 1.0),
                                                               getattr(cfg, 'bern_threshold', 0.0)).to(cfg.device))
-                    self.aliases['bern_valid'] = 'bern'
 
 
     def forward(self, img_mask, loss_mask, output, gt):
@@ -105,10 +101,6 @@ class loss_criterion(torch.nn.Module):
         loss_dict = {}
         for criterion in self.criterions:
             loss_dict.update(criterion(data_dict))
-
-        for alias, native in self.aliases.items():
-            if native in loss_dict:
-                loss_dict[alias] = loss_dict.pop(native)
 
         loss_dict["total"] = 0
         for loss, lambda_value in cfg.lambda_dict.items():

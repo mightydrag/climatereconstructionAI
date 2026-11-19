@@ -48,7 +48,7 @@ class BernoulliLossValid(nn.Module):
 
     def forward(self, data_dict):
         loss_dict = {
-            'bern': 0.0
+            'bern_valid': 0.0
         }
 
         output = data_dict['output']
@@ -72,6 +72,6 @@ class BernoulliLossValid(nn.Module):
             else:
                 combined_hole_mask_ch = mask_ch
 
-            loss_dict['bern'] += (weight * combined_hole_mask_ch * self.bce(pred, target)).mean()
+            loss_dict['bern_valid'] += (weight * combined_hole_mask_ch * self.bce(pred, target)).mean()
 
         return loss_dict
