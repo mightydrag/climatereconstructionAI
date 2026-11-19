@@ -60,7 +60,7 @@ list_known_vars() {  # print the VAR_FILE_MAP as "key -> file-var" lines (stderr
 #   ./submit.sh    -> automatically uses ${CONFIG_DIR}/${DEFAULT_CONFIG_NAME} if present
 # Edit the CONFIG_DIR line to move the directory somewhere else
 # (absolute paths work too, e.g. "/work/uo1075/u244085/.../configs").
-CONFIG_DIR="${SCRIPT_DIR}/../input/levante"
+CONFIG_DIR="${SCRIPT_DIR}/../levante"
 DEFAULT_CONFIG_NAME="config.txt"
 DEFAULT_CONFIG_FILE="${CONFIG_DIR}/${DEFAULT_CONFIG_NAME}"
 
