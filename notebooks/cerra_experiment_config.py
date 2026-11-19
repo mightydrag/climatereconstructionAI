@@ -21,6 +21,7 @@ Set force_rewrite = True in the settings to always rewrite the config files,
 even when their content is unchanged.
 """
 
+
 # =========================================================
 # 1. General settings (shared by ALL configurations)
 # =========================================================
@@ -143,6 +144,10 @@ CONFIGS = {
 
 # =========================================================
 # 2b. Model / run hyperparameters
+#     EVERY key here (or in a config's "model" override) is written to the
+#     generated config files as "--<key> <value>" (underscores -> dashes).
+#     A boolean True becomes the bare flag (store_true); False omits it.
+#     So any argument of climatereconstructionai/config.py can be set here.
 #     Shared defaults; any key can be overridden per config via a
 #     "model" dict inside the CONFIGS entry. All of these are part of
 #     the experiment fingerprint: changing one yields a NEW run name
@@ -152,7 +157,7 @@ MODEL_DEFAULTS = {
     "device": "cuda",
     "n_threads": 64,
     "n_target_data": 1,
-    "multiple_gpus": True,
+    "multi_gpus": True,   # -> --multi-gpus
     "lr": 5e-4,
     "out_channels": 1,
     "dataset_name": "cerra_ger_mult_file",
@@ -506,9 +511,14 @@ import hashlib
 
 
 def model_params(cfg):
-    """MODEL_DEFAULTS overridden by the config's own "model" dict."""
-    m = dict(MODEL_DEFAULTS)
-    m.update(cfg.get("model", {}))
+    """MODEL_DEFAULTS overridden by the config's own "model" dict.
+
+    Keys are normalized (dashes -> underscores), so an override may use the
+    CLI spelling ("conv-factor", "precip-log-transform") or the Python one
+    ("conv_factor", "precip_log_transform").
+    """
+    m = {k.replace("-", "_"): v for k, v in MODEL_DEFAULTS.items()}
+    m.update({k.replace("-", "_"): v for k, v in cfg.get("model", {}).items()})
     return m
 
 
@@ -588,40 +598,29 @@ def header_block(config_name, run_name):
 
 
 def model_block(m):
-    """Model/hyperparameter lines shared by the train and eval configs."""
-    lines = [
-        f"--device {m['device']}",
-        f"--n-threads {m['n_threads']}",
-    ]
-    if m["multiple_gpus"]:
-        lines.append("--multi-gpus")   # flag name as defined in climatereconstructionai/config.py
-    lines += [
-        f"--lr {m['lr']}",
-        f"--out-channels {m['out_channels']}",
-        "",
-        f"--dataset-name {m['dataset_name']}",
-        f"--plot-results {m['plot_results']}",
-    ]
-    if m["shuffle_masks"]:
-        lines.append("--shuffle-masks")
-    lines += [
-        f"--encoding-layers {m['encoding_layers']}",
-        f"--pooling-layers {m['pooling_layers']}",
-    ]
-    if m["normalize_data"]:
-        lines.append("--normalize-data")
-    lines += [
-        f"--decoder-upsample {m['decoder_upsample']}",
-        f"--conv-factor {m['conv_factor']}",
-        f"--batch-size {m['batch_size']}",
-        "",
-        f"--loss-criterion {m['loss_criterion']}",
-        "",
-        f"--save-model-interval {m['save_model_interval']}",
-        f"--log-interval {m['log_interval']}",
-        f"--eval-timesteps {m['eval_timesteps']}",
-        f"--max-iter {m['max_iter']}",
-    ]
+    """Pass every model param through as a --flag line.
+
+    key -> "--<key with dashes> value"; True booleans become the bare flag
+    (store_true), False omits the line; lists are comma-joined; dicts are
+    written as key,value pairs (e.g. lambda_loss). Anything set in
+    MODEL_DEFAULTS or a per-config "model" dict ends up in the config files.
+    """
+    lines = []
+    for key, val in m.items():
+        flag = "--" + key.replace("_", "-")
+        if isinstance(val, bool):
+            if val:
+                lines.append(flag)
+        elif isinstance(val, (list, tuple)):
+            lines.append(f"{flag} {','.join(str(v) for v in val)}")
+        elif isinstance(val, dict):
+            lines.append(f"{flag} {','.join(f'{k},{v}' for k, v in val.items())}")
+        else:
+            lines.append(f"{flag} {val}")
+        if key in ("dataset_name", "loss_criterion", "save_model_interval"):
+            lines.append("")
+    while lines and lines[-1] == "":
+        lines.pop()
     return lines
 
 
@@ -641,8 +640,6 @@ def render_train_config(key, entry, names):
         f"--test-names {','.join(flags['test'])}",
         f"--xrdss-paths masks/{target_var}",
         f"--data-types {','.join(data_types(key, cfg))}",
-        "",
-        f"--n-target-data {m['n_target_data']}",
         "",
     ]
     lines += model_block(m)
@@ -672,10 +669,8 @@ def render_eval_config(key, entry, names):
     lines += [
         f"--test-names {','.join(flags['test'])}",
         f"--data-types {','.join(data_types(key, cfg))}",
-        f"--n-target-data {m['n_target_data']}",
         f"--start-year {test_start}",
         f"--end-year {test_end}",
-        f"--model-names {m['model_names']}",
         "",
     ]
     lines += model_block(m)
