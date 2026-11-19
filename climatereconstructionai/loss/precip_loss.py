@@ -45,7 +45,7 @@ class PrecipLossValid(nn.Module):
 
     def forward(self, data_dict):
         loss_dict = {
-            'precip': 0.0
+            'precip_valid': 0.0
         }
 
         output = data_dict['output']
@@ -67,7 +67,7 @@ class PrecipLossValid(nn.Module):
             else:
                 combined_hole_mask_ch = mask_ch
 
-            loss_dict['precip'] += self.l1(weight * combined_hole_mask_ch * output_ch,
-                                           weight * combined_hole_mask_ch * gt_ch)
+            loss_dict['precip_valid'] += self.l1(weight * combined_hole_mask_ch * output_ch,
+                                                 weight * combined_hole_mask_ch * gt_ch)
 
         return loss_dict

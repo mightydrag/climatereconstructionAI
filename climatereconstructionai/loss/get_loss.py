@@ -2,10 +2,10 @@ import torch
 
 from .feature_loss import FeatureLoss
 from .hole_loss import HoleLoss
-from .total_variation_loss import TotalVariationLoss
+from .total_variation_loss import TotalVariationLoss, TotalVariationLossValid
 from .valid_loss import ValidLoss
-from .bernoulli_loss import BernoulliLoss
-from .precip_loss import PrecipLoss
+from .bernoulli_loss import BernoulliLoss, BernoulliLossValid
+from .precip_loss import PrecipLoss, PrecipLossValid
 from .. import config as cfg
 from ..utils.featurizer import VGG16FeatureExtractor
 
@@ -74,14 +74,24 @@ class loss_criterion(torch.nn.Module):
                     if 'comp' not in self.tensors:
                         self.tensors.append('comp')
 
+                elif loss == 'tv_valid':
+                    self.criterions.append(TotalVariationLossValid().to(cfg.device))
+
                 elif loss == 'precip':
                     self.criterions.append(PrecipLoss(getattr(cfg, 'precip_loss_alpha', 1.0)).to(cfg.device))
                     self.tensors.append('precip')
+
+                elif loss == 'precip_valid':
+                    self.criterions.append(PrecipLossValid(getattr(cfg, 'precip_loss_alpha', 1.0)).to(cfg.device))
 
                 elif loss == 'bern':
                     self.criterions.append(BernoulliLoss(getattr(cfg, 'bern_pos_weight', 1.0),
                                                          getattr(cfg, 'bern_threshold', 0.0)).to(cfg.device))
                     self.tensors.append('bern')
+
+                elif loss == 'bern_valid':
+                    self.criterions.append(BernoulliLossValid(getattr(cfg, 'bern_pos_weight', 1.0),
+                                                              getattr(cfg, 'bern_threshold', 0.0)).to(cfg.device))
 
 
     def forward(self, img_mask, loss_mask, output, gt):
