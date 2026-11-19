@@ -2,9 +2,13 @@
 """CERRA experiment workflow -- script version of cerra_experiment_config.ipynb.
 
 Edit the SETTINGS block below (paths, region, splits, CONFIGS, MODEL_DEFAULTS,
-selected, force_rewrite), then run:
+force_rewrite), then run:
 
-    python3 cerra_experiment_config.py
+    python3 cerra_experiment_config.py [CONFIG_KEY]
+
+The config to generate defaults to the `selected` value in the settings block and
+can be overridden by a positional argument (a CONFIGS key, or "all") or the
+CERRA_SELECTED env var -- e.g. python3 cerra_experiment_config.py tp_tciwv-all_var
 
 The script
   1. validates that every required .nc file exists (writes nothing if any is
@@ -79,8 +83,8 @@ CONFIGS = {
         "static_vars": ["orography"],
         "target": "tp",
         "model": {"lr": 5e-5,
-                  "conv-factor": 512,
-                  "precip-log-transform": True,
+                  "conv_factor": 512,
+                  "precip_log_transform": True,
                   "loss_criterion": 8, },
     },
     "tp_tciwv-all_var-atten": {
@@ -88,8 +92,8 @@ CONFIGS = {
         "static_vars": ["orography"],
         "target": "tp",
         "model": {"lr": 5e-5,
-                  "conv-factor": 512,
-                  "precip-log-transform": True,
+                  "conv_factor": 512,
+                  "precip_log_transform": True,
                   "loss_criterion": 8, 
                   "attention":True},
     },
@@ -98,8 +102,8 @@ CONFIGS = {
         "static_vars": ["orography"],
         "target": "tp",
         "model": {"lr": 5e-5,
-            "conv-factor": 512,
-            "precip-log-transform": True,
+            "conv_factor": 512,
+            "precip_log_transform": True,
             "loss_criterion": 8, },
     },
     "tp-all_var-atten": {
@@ -107,8 +111,8 @@ CONFIGS = {
         "static_vars": ["orography"],
         "target": "tp",
         "model": {"lr": 5e-5,
-            "conv-factor": 512,
-            "precip-log-transform": True,
+            "conv_factor": 512,
+            "precip_log_transform": True,
             "loss_criterion": 8, 
             "attention":True},
     },
@@ -175,15 +179,29 @@ MODEL_DEFAULTS = {
     "eval_timesteps": "0,100",
     "max_iter": 100000,
     "attention": False,
-    "precip-log-transform": False,
+    "precip_log_transform": False,
     "model_names": "best",      # eval only: which checkpoint(s) to evaluate
 }
 
 # ---- select which config to create the files for ----
-# one key of CONFIGS -> only that config; None -> ALL configs
-selected = "tp-all_var-atten"
+# one key of CONFIGS -> only that config; "all"/None -> ALL configs
+# default below; override WITHOUT editing when running the .py script:
+#   python3 cerra_experiment_config.py tp_tciwv-all_var     # positional arg
+#   CERRA_SELECTED=tp_tciwv-all_var python3 ...              # env var
+# (in Jupyter, sys.argv holds kernel flags starting with '-', so the CLI
+#  override is ignored there and the default/env var is used)
+import os
+import sys
+
+selected = "t2m-single"
+if len(sys.argv) > 1 and not sys.argv[1].startswith("-"):
+    selected = None if sys.argv[1] in ("all", "None") else sys.argv[1]
+_env_sel = os.environ.get("CERRA_SELECTED")
+if _env_sel:
+    selected = None if _env_sel in ("all", "None") else _env_sel
 if not selected in CONFIGS.keys():
-    raise ValueError("WRONG CONFIG SELECTED")
+    raise ValueError(f"WRONG CONFIG SELECTED: '{selected}' -- valid keys: {', '.join(CONFIGS.keys())}")
+print(f"selected config: {selected}")
 # ---- where the generated train/eval config files are written ----
 # the file-name prefixes match input/slurm-scripts/submit-train-cerra.sh and
 # submit-eval-cerra.sh, which derive the slurm job name from the file name
