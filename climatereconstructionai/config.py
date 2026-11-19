@@ -93,7 +93,21 @@ def set_lambdas():
         lambda_dict["tv"] = 0.1
         lambda_dict["prc"] = 0.05
         lambda_dict["style"] = 120.0
-    
+
+    if loss_criterion == 7:
+        lambda_dict["valid"] = 6.0
+        lambda_dict["tv_valid"] = 0.1
+        lambda_dict["prc"] = 0.05
+        lambda_dict["style"] = 120.0
+
+    if loss_criterion == 8:
+        lambda_dict["valid"] = 1.0
+        lambda_dict["precip_valid"] = 6.0
+        lambda_dict["bern_valid"] = 1.0
+        lambda_dict["tv_valid"] = 0.1
+        lambda_dict["prc"] = 0.05
+        lambda_dict["style"] = 120.0
+
     if lambda_loss is not None:
         lambda_dict.update(lambda_loss)
 
