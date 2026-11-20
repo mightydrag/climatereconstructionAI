@@ -108,6 +108,30 @@ def set_lambdas():
         lambda_dict["prc"] = 0.05
         lambda_dict["style"] = 120.0
 
+    elif loss_criterion == 9:
+        # two-stage Bernoulli-Gamma loss on the hole region (e.g. precipitation)
+        lambda_dict["valid"] = 1.0
+        lambda_dict["bern_gamma"] = 6.0
+        lambda_dict["tv"] = 0.1
+        lambda_dict["prc"] = 0.05
+        lambda_dict["style"] = 120.0
+
+    elif loss_criterion == 10:
+        # two-stage Bernoulli-Gamma loss on the valid region
+        lambda_dict["valid"] = 1.0
+        lambda_dict["bern_gamma_valid"] = 6.0
+        lambda_dict["tv_valid"] = 0.1
+        lambda_dict["prc"] = 0.05
+        lambda_dict["style"] = 120.0
+
+    elif loss_criterion == 11:
+        # gamma loss on the hole region (e.g. wind speed, humidity)
+        lambda_dict["valid"] = 1.0
+        lambda_dict["gamma"] = 6.0
+        lambda_dict["tv"] = 0.1
+        lambda_dict["prc"] = 0.05
+        lambda_dict["style"] = 120.0
+
     if lambda_loss is not None:
         lambda_dict.update(lambda_loss)
 
@@ -390,6 +414,21 @@ def set_common_args():
         help="Use a custom padding for global dataset",
     )
     arg_parser.add_argument(
+        "--gnn-layers",
+        type=int,
+        default=0,
+        help="Number of graph convolution (GNN) layers applied at the bottleneck "
+        "of the U-Net, treating grid cells as nodes (0 disables the GNN)",
+    )
+    arg_parser.add_argument(
+        "--gnn-neighbors",
+        type=int,
+        choices=(4, 8),
+        default=8,
+        help="Number of grid neighbours per node used for message passing in "
+        "the GNN layers (4 or 8)",
+    )
+    arg_parser.add_argument(
         "--decoder-upsample",
         choices=("bilinear", "nearest"),
         default=None,
@@ -537,7 +576,9 @@ def set_train_args(arg_file=None):
         default=0,
         help="Index defining the loss function "
         "(0=original from Liu et al., 1=MAE of the hole region, "
-        "4=precipitation-weighted hole loss)",
+        "4=precipitation-weighted hole loss, 5/8=precipitation-weighted + Bernoulli, "
+        "9/10=two-stage Bernoulli-Gamma, 11=gamma; individual loss terms can also be "
+        "set via --lambda-loss)",
     )
     arg_parser.add_argument(
         "--eval-timesteps",
@@ -584,6 +625,27 @@ def set_train_args(arg_file=None):
         default=0.0,
         help="Threshold on the (normalized) target above which a pixel counts "
         "as wet in the Bernoulli loss",
+    )
+    arg_parser.add_argument(
+        "--gamma-shape",
+        type=float,
+        default=1.0,
+        help="Shape parameter of the gamma distribution used in the gamma and "
+        "Bernoulli-Gamma losses",
+    )
+    arg_parser.add_argument(
+        "--gamma-threshold",
+        type=float,
+        default=0.0,
+        help="Threshold on the (normalized) target above which a pixel contributes "
+        "to the gamma (amount) loss",
+    )
+    arg_parser.add_argument(
+        "--gamma-data-types",
+        type=str_list,
+        default=None,
+        help="Comma separated data type names to which the gamma/Bernoulli-Gamma "
+        "loss is applied (default: all output channels)",
     )
     arg_parser.add_argument(
         "--val-metrics",

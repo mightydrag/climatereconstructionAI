@@ -101,7 +101,7 @@ usage: crai-train [-h] [--data-root-dir DATA_ROOT_DIR] [--mask-dir MASK_DIR] [--
                   [--n-target-data N_TARGET_DATA] [--device DEVICE] [--shuffle-masks] [--channel-steps CHANNEL_STEPS] [--lstm-steps LSTM_STEPS] [--gru-steps GRU_STEPS]
                   [--encoding-layers ENCODING_LAYERS] [--pooling-layers POOLING_LAYERS] [--conv-factor CONV_FACTOR] [--weights WEIGHTS] [--steady-masks STEADY_MASKS]
                   [--loop-random-seed LOOP_RANDOM_SEED] [--cuda-random-seed CUDA_RANDOM_SEED] [--deterministic] [--attention] [--channel-reduction-rate CHANNEL_REDUCTION_RATE] [--disable-skip-layers]
-                  [--disable-first-bn] [--masked-bn] [--lazy-load] [--global-padding] [--normalize-data] [--n-filters N_FILTERS] [--out-channels OUT_CHANNELS] [--dataset-name DATASET_NAME]
+                  [--disable-first-bn] [--masked-bn] [--lazy-load] [--global-padding] [--gnn-layers GNN_LAYERS] [--gnn-neighbors GNN_NEIGHBORS] [--normalize-data] [--n-filters N_FILTERS] [--out-channels OUT_CHANNELS] [--dataset-name DATASET_NAME]
                   [--min-bounds MIN_BOUNDS] [--max-bounds MAX_BOUNDS] [--profile] [--val-names VAL_NAMES] [--snapshot-dir SNAPSHOT_DIR] [--resume-iter RESUME_ITER] [--batch-size BATCH_SIZE]
                   [--n-threads N_THREADS] [--multi-gpus] [--finetune] [--lr LR] [--lr-finetune LR_FINETUNE] [--max-iter MAX_ITER] [--log-interval LOG_INTERVAL]
                   [--lr-scheduler-patience LR_SCHEDULER_PATIENCE] [--save-model-interval SAVE_MODEL_INTERVAL] [--n-final-models N_FINAL_MODELS] [--final-models-interval FINAL_MODELS_INTERVAL]
@@ -153,6 +153,10 @@ options:
   --masked-bn           Use masked batch normalization instead of standard BN
   --lazy-load           Use lazy loading for large datasets
   --global-padding      Use a custom padding for global dataset
+  --gnn-layers GNN_LAYERS
+                        Number of graph convolution (GNN) layers applied at the bottleneck of the U-Net, treating grid cells as nodes (0 disables the GNN)
+  --gnn-neighbors GNN_NEIGHBORS
+                        Number of grid neighbours per node used for message passing in the GNN layers (4 or 8)
   --precip-log-transform Apply log1p to precipitation data types before normalization (reduces skewness of the precipitation distribution)
   --precip-log-names PRECIP_LOG_NAMES
                           Comma separated data type names treated as precipitation for --precip-log-transform
@@ -195,7 +199,7 @@ options:
   --final-models-interval FINAL_MODELS_INTERVAL
                         Iteration step interval at which the final models should be saved
   --loss-criterion LOSS_CRITERION
-                        Index defining the loss function (0=original from Liu et al., 1=MAE of the hole region,4=precipitation-weighted hole loss)
+                        Index defining the loss function (0=original from Liu et al., 1=MAE of the hole region, 4=precipitation-weighted hole loss, 5/8=precipitation-weighted + Bernoulli, 9/10=two-stage Bernoulli-Gamma, 11=gamma; individual loss terms can also be set via --lambda-loss)
   --eval-timesteps EVAL_TIMESTEPS
                         Sample indices for which a snapshot is created at each iter defined by log-interval
   -f LOAD_FROM_FILE, --load-from-file LOAD_FROM_FILE
@@ -209,6 +213,12 @@ options:
                         Weight for wet pixels in the Bernoulli (rain occurrence) loss
   --bern-threshold BERN_THRESHOLD
                         Threshold on the (normalized) target above which a pixel counts as wet in the Bernoulli loss
+  --gamma-shape GAMMA_SHAPE
+                        Shape parameter of the gamma distribution used in the gamma and Bernoulli-Gamma losses
+  --gamma-threshold GAMMA_THRESHOLD
+                        Threshold on the (normalized) target above which a pixel contributes to the gamma (amount) loss
+  --gamma-data-types GAMMA_DATA_TYPES
+                        Comma separated data type names to which the gamma/Bernoulli-Gamma loss is applied (default: all output channels)
   --val-metrics VAL_METRICS
                         Comma separated list of metrics that are evaluated on the val dataset at log-interval
   --tensor-plots TENSOR_PLOTS
@@ -226,7 +236,7 @@ usage: crai-evaluate [-h] [--data-root-dir DATA_ROOT_DIR] [--mask-dir MASK_DIR] 
                      [--n-target-data N_TARGET_DATA] [--device DEVICE] [--shuffle-masks] [--channel-steps CHANNEL_STEPS] [--lstm-steps LSTM_STEPS] [--gru-steps GRU_STEPS]
                      [--encoding-layers ENCODING_LAYERS] [--pooling-layers POOLING_LAYERS] [--conv-factor CONV_FACTOR] [--weights WEIGHTS] [--steady-masks STEADY_MASKS]
                      [--loop-random-seed LOOP_RANDOM_SEED] [--cuda-random-seed CUDA_RANDOM_SEED] [--deterministic] [--attention] [--channel-reduction-rate CHANNEL_REDUCTION_RATE] [--disable-skip-layers]
-                     [--disable-first-bn] [--masked-bn] [--lazy-load] [--global-padding] [--normalize-data] [--n-filters N_FILTERS] [--out-channels OUT_CHANNELS] [--dataset-name DATASET_NAME]
+                     [--disable-first-bn] [--masked-bn] [--lazy-load] [--global-padding] [--gnn-layers GNN_LAYERS] [--gnn-neighbors GNN_NEIGHBORS] [--normalize-data] [--n-filters N_FILTERS] [--out-channels OUT_CHANNELS] [--dataset-name DATASET_NAME]
                      [--min-bounds MIN_BOUNDS] [--max-bounds MAX_BOUNDS] [--profile] [--model-dir MODEL_DIR] [--model-names MODEL_NAMES] [--evaluation-dirs EVALUATION_DIRS] [--eval-names EVAL_NAMES]
                      [--use-train-stats] [--create-graph] [--plot-results PLOT_RESULTS] [--partitions PARTITIONS] [--maxmem MAXMEM] [--split-outputs] [-f LOAD_FROM_FILE]
 
@@ -275,6 +285,10 @@ options:
   --masked-bn           Use masked batch normalization instead of standard BN
   --lazy-load           Use lazy loading for large datasets
   --global-padding      Use a custom padding for global dataset
+  --gnn-layers GNN_LAYERS
+                        Number of graph convolution (GNN) layers applied at the bottleneck of the U-Net, treating grid cells as nodes (0 disables the GNN)
+  --gnn-neighbors GNN_NEIGHBORS
+                        Number of grid neighbours per node used for message passing in the GNN layers (4 or 8)
   --normalize-data      Normalize the input climate data to 0 mean and 1 std
   --n-filters N_FILTERS
                         Number of filters for the first/last layer
@@ -305,6 +319,30 @@ options:
   --split-outputs       Do not merge the outputs when using multiple models and/or partitions
   -f LOAD_FROM_FILE, --load-from-file LOAD_FROM_FILE
                         Load all the arguments from a text file
+```
+
+## Distribution-aware losses, GNN and temporal architectures
+
+Besides the reconstruction losses above, the training supports distribution-aware loss terms that improve the representation of variance and tail behaviour (e.g. of sub-daily precipitation, wind or humidity):
+
+- `--loss-criterion 9` / `10`: two-stage **Bernoulli-Gamma** loss (Bernoulli negative log-likelihood for the occurrence plus a gamma negative log-likelihood for the amount on wet pixels), on the hole or the valid region. The occurrence threshold and wet-pixel weight are set via `--bern-threshold` / `--bern-pos-weight`; the gamma shape via `--gamma-shape`.
+- `--loss-criterion 11`: **gamma** loss (negative log-likelihood of a gamma distribution) on the hole region, e.g. for wind speed or humidity.
+- Individual loss terms can also be combined freely via `--lambda-loss`, e.g. `--lambda-loss valid,1.0 bern_gamma,6.0 tv,0.1`. The available terms are `valid`, `hole`, `tv`, `tv_valid`, `precip`, `precip_valid`, `bern`, `bern_valid`, `gamma`, `gamma_valid`, `bern_gamma`, `bern_gamma_valid`, `prc` and `style`.
+- With `--gamma-data-types pr,hurs` the gamma/Bernoulli-Gamma terms are restricted to the output channels of the listed data types (useful for multi-variable setups where, e.g., only precipitation and humidity should be treated distributionally).
+- Combined with `--precip-log-transform`, a threshold of `0.0` in the transformed space separates dry from wet pixels.
+
+For the architecture:
+
+- `--gnn-layers N` adds N graph convolution layers at the bottleneck of the U-Net, where each grid cell is a node and messages are passed between its `--gnn-neighbors` (4 or 8) nearest grid neighbours (circular in longitude with `--global-padding`). This provides GNN-style spatial message passing without additional dependencies.
+- Temporal dependence between time steps is modelled with the recurrent options `--lstm-steps past,future` (ConvLSTM) or `--gru-steps past,future` (TrajGRU), or with `--channel-steps past,future` for channeled memory; these can be combined with the GNN layers.
+
+Example (sub-daily precipitation infilling with a Bernoulli-Gamma loss, GNN bottleneck and temporal recurrence):
+
+```bash
+crai-train --data-names pr.nc --data-types pr --n-target-data 1 --out-channels 1 \
+  --precip-log-transform --normalize-data \
+  --loss-criterion 9 --gamma-data-types pr \
+  --gnn-layers 2 --gnn-neighbors 8 --lstm-steps 2,1
 ```
 
 ## Example
