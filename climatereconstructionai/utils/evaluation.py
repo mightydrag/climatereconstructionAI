@@ -212,7 +212,20 @@ def infill(model, dataset, eval_path, output_names, data_stats, xr_dss, i_model)
             )
 
         # Choose time step, if lstm applied?
-        for key in ("image", "mask", "gt", "output"):
+        aggregation = getattr(cfg, "target_aggregation", "none")
+        if aggregation == "sum":
+            data_dict["output"] = data_dict["output"].sum(dim=1).to(
+                torch.device("cpu")
+            )
+        elif aggregation == "mean":
+            data_dict["output"] = data_dict["output"].mean(dim=1).to(
+                torch.device("cpu")
+            )
+        else:
+            data_dict["output"] = data_dict["output"][:, cfg.recurrent_steps, :, :, :].to(
+                torch.device("cpu")
+            )
+        for key in ("image", "mask", "gt"):
             data_dict[key] = data_dict[key][:, cfg.recurrent_steps, :, :, :].to(
                 torch.device("cpu")
             )

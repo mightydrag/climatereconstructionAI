@@ -8,8 +8,9 @@ from .conv_configs import (
     init_enc_conv_configs_orig,
     init_dec_conv_configs_orig,
 )
-from .encoder_decoder import EncoderBlock, DecoderBlock
+from .encoder_decoder import EncoderBlock, DecoderBlock, sequence_to_batch, batch_to_sequence
 from .bounds_scaler import constrain_bounds
+from .graph_conv_module import GraphConvBlock
 from .. import config as cfg
 
 
@@ -150,6 +151,17 @@ class CRAINet(nn.Module):
             )
         self.decoder = nn.ModuleList(decoding_layers)
 
+        # optional graph convolution (GNN) layers at the bottleneck
+        self.gnn_layers = getattr(cfg, "gnn_layers", 0)
+        if self.gnn_layers:
+            gnn_channels = enc_conv_configs[self.net_depth - 1]["out_channels"]
+            self.gnn = nn.ModuleList(
+                [
+                    GraphConvBlock(gnn_channels, getattr(cfg, "gnn_neighbors", 8))
+                    for _ in range(self.gnn_layers)
+                ]
+            )
+
         self.binder = constrain_bounds(bounds)
 
     def forward(self, input, input_mask):
@@ -252,6 +264,16 @@ class CRAINet(nn.Module):
         #         hs_mask[i] = torch.flip(hs_mask[i], (1,))
 
         h, h_mask = hs[self.net_depth], hs_mask[self.net_depth]
+
+        # apply GNN layers at the bottleneck
+        if self.gnn_layers:
+            batch_size = h.shape[0]
+            h = sequence_to_batch(h)
+            h_mask = sequence_to_batch(h_mask)
+            for gnn_block in self.gnn:
+                h = gnn_block(h, h_mask)
+            h = batch_to_sequence(h, batch_size)
+            h_mask = batch_to_sequence(h_mask, batch_size)
 
         # forward pass decoding layers
         for i in range(self.net_depth):
