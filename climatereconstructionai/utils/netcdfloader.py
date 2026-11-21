@@ -257,6 +257,25 @@ class NetCDFLoader(Dataset):
                 self.mask_sample_lengths[e] = [
                     entry // self.time_factor for entry in self.mask_all_lengths[e]
                 ]
+        qdm_input_file = getattr(cfg, "qdm_input_file", None)
+        if qdm_input_file:
+            from ..quantile_mapping import load_qdm
+
+            qdm = load_qdm(qdm_input_file)
+            if qdm.group_by_month:
+                raise ValueError(
+                    "qdm_input_file was fitted with monthly QDM groups, but the "
+                    "loader has no time coordinate. Either fit with annual groups "
+                    "or pre-apply the QDM to the files with "
+                    "'python -m climatereconstructionai.quantile_mapping apply'"
+                )
+            for i in range(len(self.img_data)):
+                if self.data_types[i] in qdm.data_types:
+                    self.img_data[i] = [
+                        qdm.apply(self.data_types[i], np.asarray(a))
+                        for a in self.img_data[i]
+                    ]
+
         if getattr(cfg, "precip_log_transform", False):
             for i in range(len(self.img_data)):
                 if is_precip_data_type(self.data_types[i]):

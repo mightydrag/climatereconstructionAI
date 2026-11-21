@@ -71,6 +71,23 @@ The missing values can be defined separately as masks containing zeros (for the 
 
 A PyTorch model is required for the evaluation.
 
+### Bias-correcting driving inputs with quantile delta mapping (QDM)
+If a model trained on a reference dataset (e.g. CERRA) should be driven with another dataset (e.g. MPI-GE), the driving fields can first be mapped into the reference space with quantile delta mapping (QDM; Cannon, Sobie & Murdock 2015, *Journal of Climate* 28(17), 6938-6959, https://doi.org/10.1175/JCLI-D-14-00754.1). QDM corrects the distributional bias of the driving data against the reference over a calibration period while preserving the driving data's own changes (e.g. a scenario signal). Precipitation-like variables are corrected multiplicatively, other variables additively; optionally per calendar month.
+
+Fit the transfer functions on the overlap period of reference and driving data (here: CERRA and the MPI-GE historical run, 1985-2014):
+```bash
+python -m climatereconstructionai.quantile_mapping fit \
+  --ref cerra.nc --mod mpi-ge-historical.nc --mod-fut mpi-ge-scenario.nc \
+  --vars tas,pr --hist-period 1985-2014 --fut-period 2071-2100 \
+  --group-by-month --out qdm_cerra_mpige.npz
+```
+Then either pre-correct whole files:
+```bash
+python -m climatereconstructionai.quantile_mapping apply \
+  --in mpi-ge-scenario.nc --out mpi-ge-scenario-qdm.nc --qdm qdm_cerra_mpige.npz
+```
+or let the data loader apply an (annually fitted) QDM on the fly when loading inputs, by passing `--qdm-input-file qdm_cerra_mpige.npz` to `crai-train`/`crai-evaluate`.
+
 ### Execution
 
 Once installed, the package can be used as:
