@@ -19,6 +19,8 @@ def setup_cfg(**overrides):
     cfg.n_filters = None
     cfg.conv_factor = 8
     cfg.gnn_layers = 0
+    cfg.time_pooling = "none"
+    cfg.target_aggregation = "none"
     cfg.gnn_neighbors = 8
     cfg.masked_bn = False
     cfg.disable_first_bn = False

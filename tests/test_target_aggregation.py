@@ -13,6 +13,7 @@ def setup_cfg(**overrides):
     cfg.out_channels = 1
     cfg.target_aggregation = "none"
     cfg.target_time_offset = 0
+    cfg.time_pooling = "none"
     cfg.precip_log_transform = False
     cfg.normalize_data = False
     cfg.lazy_load = False
@@ -206,6 +207,43 @@ def test_prepare_data_dict_aggregation():
         data_dict = prepare_data_dict(mask, None, output, gt, ["output", "gt", "mask"])
         assert data_dict["output"].shape == (batch, channels, height, width)
         assert torch.allclose(data_dict["output"], expected)
+
+
+def test_crainet_time_pooling():
+    from climatereconstructionai.model.net import CRAINet
+
+    setup_cfg(target_aggregation="sum")
+    cfg.lstm_steps = [1, 1]
+    cfg.recurrent_steps = 1
+    cfg.n_recurrent_steps = 3
+    cfg.gnn_layers = 0
+    bounds = np.array([[-np.inf, np.inf]])
+    g = torch.Generator().manual_seed(0)
+    image = torch.randn(2, 3, 1, 16, 16, generator=g)
+    mask = torch.ones(2, 3, 1, 16, 16)
+
+    for mode in ("mean", "last", "sum", "attention"):
+        cfg.time_pooling = mode
+        model = CRAINet(
+            img_size=(16, 16), enc_dec_layers=2, pool_layers=1,
+            in_channels=1, out_channels=1, bounds=bounds,
+        )
+        out = model(image, mask)
+        # the window is collapsed to a single (daily) output field
+        assert out.shape == (2, 1, 1, 16, 16)
+        assert torch.isfinite(out).all()
+        out.sum().backward()
+        if mode == "attention":
+            assert model.time_pool.score.weight.grad is not None
+
+    # without pooling the model still returns one output per input step
+    cfg.time_pooling = "none"
+    model = CRAINet(
+        img_size=(16, 16), enc_dec_layers=2, pool_layers=1,
+        in_channels=1, out_channels=1, bounds=bounds,
+    )
+    out = model(image, mask)
+    assert out.shape == (2, 3, 1, 16, 16)
 
 
 def test_loss_computation_with_aggregation():

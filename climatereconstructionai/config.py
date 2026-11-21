@@ -211,6 +211,14 @@ def global_args(parser, arg_file=None, prog_func=None):
 
     n_recurrent_steps = sum(time_steps) + 1
 
+    if time_pooling != "none":
+        assert target_aggregation != "none", (
+            "--time-pooling requires --target-aggregation (daily target indexing)"
+        )
+        assert lstm_steps or gru_steps, (
+            "--time-pooling requires --lstm-steps or --gru-steps"
+        )
+
     global n_channel_steps
     global gt_channels
 
@@ -422,6 +430,15 @@ def set_common_args():
         "aggregated (e.g. daily) target. Requires --n-target-data > 0 and "
         "recurrent steps (--lstm-steps/--gru-steps). Default 'none' keeps the "
         "center-timestep behavior",
+    )
+    arg_parser.add_argument(
+        "--time-pooling",
+        choices=("none", "mean", "last", "sum", "attention"),
+        default="none",
+        help="Collapse the input time window to a single (aggregated, e.g. "
+        "daily) output field inside the model, instead of producing one output "
+        "per input step. 'attention' learns per-step weights. Requires "
+        "--target-aggregation and --lstm-steps/--gru-steps. Default 'none'",
     )
     arg_parser.add_argument(
         "--target-time-offset",

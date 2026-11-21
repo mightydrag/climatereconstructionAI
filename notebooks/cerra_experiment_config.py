@@ -97,6 +97,7 @@ CONFIGS = {
                   "lstm_steps": [7, 0],           # trailing window: previous 8 steps
                   "target_aggregation": "sum",
                   "target_time_offset": 0,
+                  "time_pooling": "attention",    # model maps the 8 steps to the daily total
                   "gnn_layers": 2},
     },
     "relative_humidity-all_var-3h-daily": {
@@ -110,6 +111,7 @@ CONFIGS = {
                   "lstm_steps": [7, 0],
                   "target_aggregation": "mean",
                   "target_time_offset": 0,
+                  "time_pooling": "mean",         # daily mean directly from the window
                   "gnn_layers": 2},
     },
     # precipitation experiment: tp + drivers
