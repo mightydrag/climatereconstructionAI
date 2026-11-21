@@ -73,6 +73,47 @@ CONFIGS = {
         "target": "relative_humidity",
         "model": {"attention":True},
     },
+    # ---- sub-daily (3-hourly) inputs with a DAILY target ----
+    # "input_template": "input_3h" selects the 3-hourly input/mask file layout.
+    # The daily target is the aggregation of the 8 sub-daily steps; for
+    # precipitation the daily value is the SUM OF THE PREVIOUS 8 steps, i.e. a
+    # trailing window: --lstm-steps 7,0 makes day i cover sub-daily steps
+    # 8i-7 .. 8i. Set "target_time_offset" if the daily stamp is not aligned
+    # with step 8i (e.g. 06UTC-stamped daily sums with 00UTC-start 3-hourly
+    # files -> offset 2). --target-aggregation sum for precipitation totals,
+    # mean for daily means of the other variables. Pass the same flags at
+    # evaluation (they are part of the generated eval config automatically).
+    "tp-all_var-3h-daily": {
+        "input_vars": ["tp", "t2m", "relative_humidity", "surface_pressure", "wind_speed", "wind_direction"],
+        "static_vars": ["orography"],
+        "target": "tp",
+        "input_template": "input_3h",
+        "daily_input_vars": ["tp"],   # tp exists only daily -> daily input file
+        "model": {"lr": 5e-5,
+                  "conv-factor": 512,
+                  "precip-log-transform": True,
+                  "loss_criterion": 9,            # Bernoulli-Gamma on the daily sum
+                  "gamma_data_types": "tp",
+                  "lstm_steps": [7, 0],           # trailing window: previous 8 steps
+                  "target_aggregation": "sum",
+                  "target_time_offset": 0,
+                  "time_pooling": "attention",    # model maps the 8 steps to the daily total
+                  "gnn_layers": 2},
+    },
+    "relative_humidity-all_var-3h-daily": {
+        "input_vars": ["relative_humidity", "t2m", "surface_pressure", "wind_speed", "wind_direction"],
+        "static_vars": ["orography"],
+        "target": "relative_humidity",
+        "input_template": "input_3h",
+        "model": {"loss_criterion": 11,         # gamma loss on the daily mean
+                  "gamma_data_types": "2r",
+                  "min_bounds": [0], "max_bounds": [100],   # physical range of 2r
+                  "lstm_steps": [7, 0],
+                  "target_aggregation": "mean",
+                  "target_time_offset": 0,
+                  "time_pooling": "mean",         # daily mean directly from the window
+                  "gnn_layers": 2},
+    },
     # precipitation experiment: tp + drivers
     "tp_tciwv-all_var": {
         "input_vars": ["tciwv", "t2m", "relative_humidity", "surface_pressure", "wind_speed", "wind_direction"],
@@ -211,25 +252,52 @@ force_rewrite = False
 # =========================================================
 NC_TPL = {
     "input":       "{data_root}/{var}/cerra_dm_{var}_{year}{reg_sfx}{descriptor}{res_sfx}.nc",
+    # 3-hourly (sub-daily) input files for --target-aggregation experiments;
+    # adjust the names to the actual 3-hourly CERRA files
+    "input_3h": "{data_root}/{var}/cerra_dm_{var}_{year}{reg_sfx}{descriptor}{res_sfx}_3h.nc",
     "target":      "{data_root}/{var}/cerra_dm_{var}_{year}{other_sfx}{reg_sfx}.nc",
     "static":      "{data_root}/{var}/cerra_dm_{var}_{static_year}{other_sfx}{reg_sfx}.nc",
     "mask":        "{mask_folder}/cerra_dm_{var}_{year}{reg_sfx}_filled_mask.nc",
+    # 3-hourly masks matching the 3-hourly inputs (same time axis, required
+    # by --target-aggregation)
+    "mask_3h": "{mask_folder}/cerra_dm_{var}_{year}{reg_sfx}_filled_mask_3h.nc",
     "mask_static": "{mask_folder}/cerra_dm_{var}_{static_year}{reg_sfx}_filled_mask.nc",
     # same layout as "mask", but listed separately so the test-split masks
     # can point at a different folder if ever needed:
     # swap {mask_folder} -> {mask_folder_test} here to use the test masks
     "mask_test":   "{mask_folder}/cerra_dm_{var}_{year}{reg_sfx}_filled_mask.nc",
+    "mask_test_3h": "{mask_folder}/cerra_dm_{var}_{year}{reg_sfx}_filled_mask_3h.nc",
     "steady_mask": "{mask_folder}/cerra_dm_{var}_{steady_mask_year}{reg_sfx}_steady_mask.nc",
 }
 
 JSON_TPL = {
     "input":       "cerra_{var}{reg_sfx}{descriptor}_{split}.json",
+    "input_3h": "cerra_{var}{reg_sfx}{descriptor}_{split}_3h.json",
     "static":      "cerra_{var}{reg_sfx}_{split}.json",
     "target":      "cerra_{var}{reg_sfx}{other_sfx}_target_{split}.json",
     "mask":        "cerra_{var}{reg_sfx}{other_sfx}_mask.json",
+    "mask_3h": "cerra_{var}{reg_sfx}{other_sfx}_mask_3h.json",
     "mask_test":   "cerra_{var}{reg_sfx}{other_sfx}_mask_test.json",
+    "mask_test_3h": "cerra_{var}{reg_sfx}{other_sfx}_mask_test_3h.json",
     "steady_mask": "cerra_{selected}_{reg_sfx}{other_sfx}_steady_mask.json",
 }
+
+
+def _tpl_pair(input_tpl):
+    """input template key -> (mask template key, mask-test template key)."""
+    return {
+        "input": ("mask", "mask_test"),
+        "input_3h": ("mask_3h", "mask_test_3h"),
+    }[input_tpl]
+
+
+def _input_tpl_for(var, input_tpl, daily_input_vars):
+    """Per-variable input template: vars in daily_input_vars use the daily
+    'input'/'mask' templates even in a sub-daily (3h) experiment, so a
+    daily-resolution file (e.g. daily precipitation) can be an input next to
+    the 3-hourly ones without interpolation."""
+    return "input" if var in daily_input_vars else input_tpl
+
 
 # common placeholders, filled in once from the section-1 block
 BASE = dict(
@@ -250,6 +318,18 @@ BASE = dict(
 # {var} / {year} / {reg} stay LITERAL for the slurm scripts; every other
 # placeholder ({data_root}, {descriptor}, {res_sfx}, {static_year}, ...)
 # is filled in here from BASE.
+
+
+def eval_tpl(nc_key):
+    return (
+        NC_TPL[nc_key]
+        .replace("{var}", "{{var}}")
+        .replace("{year}", "{{year}}")
+        .replace("{reg_sfx}", "_{{reg}}" if reg else "")
+        .format(**BASE)
+    )
+
+
 _EVAL_KEYS = {  # eval flag -> NC_TPL key
     "data":        "input",
     "static":      "static",
@@ -258,14 +338,7 @@ _EVAL_KEYS = {  # eval flag -> NC_TPL key
     "static_mask": "mask_static",
     "steady_mask": "steady_mask",
 }
-EVAL_TPL = {
-    flag: NC_TPL[key]
-        .replace("{var}", "{{var}}")
-        .replace("{year}", "{{year}}")
-        .replace("{reg_sfx}", "_{{reg}}" if reg else "")
-        .format(**BASE)
-    for flag, key in _EVAL_KEYS.items()
-}
+EVAL_TPL = {flag: eval_tpl(key) for flag, key in _EVAL_KEYS.items()}
 
 
 
@@ -289,8 +362,10 @@ var_names = {
 # =========================================================
 # 3. Helpers
 # =========================================================
-def check_files(target_var, input_vars, static_vars):
+def check_files(target_var, input_vars, static_vars, input_tpl="input",
+                daily_input_vars=()):
     """Return list of missing files for one configuration (empty = all present)."""
+    mask_tpl, _ = _tpl_pair(input_tpl)
     missing = []
     for split, (start_year, end_year) in splits.items():
         if split == "test":
@@ -300,11 +375,13 @@ def check_files(target_var, input_vars, static_vars):
             if not os.path.isfile(f_tgt):
                 missing.append(f_tgt)
             for var in input_vars:
-                f_in = NC_TPL["input"].format(**BASE, var=var, year=year)
+                v_tpl = _input_tpl_for(var, input_tpl, daily_input_vars)
+                v_mask_tpl = "mask" if var in daily_input_vars else mask_tpl
+                f_in = NC_TPL[v_tpl].format(**BASE, var=var, year=year)
                 if not os.path.isfile(f_in):
                     missing.append(f_in)
                 # binary mask: one file per year, needed for every input var
-                f_mask = NC_TPL["mask"].format(**BASE, var=var, year=year)
+                f_mask = NC_TPL[v_mask_tpl].format(**BASE, var=var, year=year)
                 if not os.path.isfile(f_mask):
                     missing.append(f_mask)
 
@@ -325,8 +402,10 @@ def steady_mask_file(target_var):
     return NC_TPL["steady_mask"].format(**BASE, var=target_var)
 
 
-def write_config(target_var, input_vars, static_vars):
+def write_config(target_var, input_vars, static_vars, input_tpl="input",
+                 daily_input_vars=()):
     """Write all JSON file lists for one configuration, return (flags, steady_mask_name)."""
+    mask_tpl, mask_test_tpl = _tpl_pair(input_tpl)
     flags = {}
 
     for split, (start_year, end_year) in splits.items():
@@ -334,15 +413,16 @@ def write_config(target_var, input_vars, static_vars):
         n_years = len(years)
         flags[split] = []
 
-        # time-varying inputs: one file per year
+        # time-varying inputs: one file per year (daily file for daily_input_vars)
         for var in input_vars:
+            v_tpl = _input_tpl_for(var, input_tpl, daily_input_vars)
             file_list_in = [
-                NC_TPL["input"].format(**BASE, var=var, year=year)
+                NC_TPL[v_tpl].format(**BASE, var=var, year=year)
                 for year in years
             ]
             path = os.path.join(ml_path, "data", split, var)
             os.makedirs(path, exist_ok=True)
-            name_in = JSON_TPL["input"].format(**BASE, var=var, split=split)
+            name_in = JSON_TPL[v_tpl].format(**BASE, var=var, split=split)
             with open(os.path.join(path, name_in), "w") as f:
                 json.dump(file_list_in, f, indent=2)
             flags[split].append(f"{var}/{name_in}")
@@ -382,7 +462,13 @@ def write_config(target_var, input_vars, static_vars):
     for var in [*input_vars, *static_vars, target_var]:
         path = os.path.join(ml_path, "data", "masks", var)
         os.makedirs(path, exist_ok=True)
-        name_mask = JSON_TPL["mask"].format(**BASE, var=var)
+        # sub-daily inputs need sub-daily masks (same time axis as the inputs);
+        # daily inputs and the target use the daily mask template
+        if var in input_vars:
+            v_mask_tpl = "mask" if var in daily_input_vars else mask_tpl
+        else:
+            v_mask_tpl = "mask"
+        name_mask = JSON_TPL[v_mask_tpl].format(**BASE, var=var)
         if var in static_vars:
             # same logic as the static input files: one mask file
             # (from static_year) repeated so all lists have the same length
@@ -391,7 +477,7 @@ def write_config(target_var, input_vars, static_vars):
             print(f"mask: 1 static mask file x {len(tv_years)} -> {path}")
         else:
             file_list_mask = [
-                NC_TPL["mask"].format(**BASE, var=var, year=year)
+                NC_TPL[v_mask_tpl].format(**BASE, var=var, year=year)
                 for year in tv_years
             ]
         with open(os.path.join(path, name_mask), "w") as f:
@@ -406,13 +492,17 @@ def write_config(target_var, input_vars, static_vars):
     for var in [*input_vars, *static_vars, target_var]:
         path = os.path.join(ml_path, "data", "test", "masks", var)
         os.makedirs(path, exist_ok=True)
-        name_mask_test = JSON_TPL["mask_test"].format(**BASE, var=var)
+        if var in input_vars:
+            v_mask_test_tpl = "mask_test" if var in daily_input_vars else mask_test_tpl
+        else:
+            v_mask_test_tpl = "mask_test"
+        name_mask_test = JSON_TPL[v_mask_test_tpl].format(**BASE, var=var)
         if var in static_vars:
             f_mask = NC_TPL["mask_static"].format(**BASE, var=var)
             file_list_mask_test = [f_mask] * len(test_years)
         else:
             file_list_mask_test = [
-                NC_TPL["mask_test"].format(**BASE, var=var, year=year)
+                NC_TPL[v_mask_test_tpl].format(**BASE, var=var, year=year)
                 for year in test_years
             ]
         with open(os.path.join(path, name_mask_test), "w") as f:
@@ -469,7 +559,9 @@ if unknown:
 missing_by_config = {}
 for key, cfg in run_configs.items():
     target_var = cfg.get("target", key)
-    m = check_files(target_var, cfg["input_vars"], cfg.get("static_vars", []))
+    m = check_files(target_var, cfg["input_vars"], cfg.get("static_vars", []),
+                    cfg.get("input_template", "input"),
+                    cfg.get("daily_input_vars", []))
     if m:
         missing_by_config[key] = m
 
@@ -494,7 +586,9 @@ for key, cfg in run_configs.items():
 
     print()
     print(f"==================== config: {key} (target {target_var}) ====================")
-    flags, name_steady = write_config(target_var, input_vars, static_vars)
+    flags, name_steady = write_config(target_var, input_vars, static_vars,
+                                      cfg.get("input_template", "input"),
+                                      cfg.get("daily_input_vars", []))
     written[key] = {
         "cfg": cfg,
         "flags": flags,
@@ -653,12 +747,15 @@ def render_eval_config(key, entry, names):
     m = model_params(cfg)
     config_name, run_name = names
     test_start, test_end = splits["test"]
+    # sub-daily experiments evaluate on the sub-daily input/mask templates
+    input_tpl = cfg.get("input_template", "input")
+    mask_tpl, _ = _tpl_pair(input_tpl)
     lines = header_block(config_name, run_name)
     lines += [
-        f"--data-file-template {EVAL_TPL['data']}",
+        f"--data-file-template {eval_tpl(input_tpl)}",
         f"--static-file-template {EVAL_TPL['static']}",
         f"--target-file-template {EVAL_TPL['target']}",
-        f"--mask-file-template {EVAL_TPL['mask']}",
+        f"--mask-file-template {eval_tpl(mask_tpl)}",
         f"--static-mask-template {EVAL_TPL['static_mask']}",
         f"--steady-mask-file {EVAL_TPL['steady_mask']}",
         f"--region {reg}",
@@ -722,5 +819,12 @@ for key, entry in written.items():
     print(f"./input/slurm-scripts/submit-train-cerra.sh {train_file}")
     print(f"./input/slurm-scripts/submit-eval-cerra.sh {eval_file}")
     print(f"./input/slurm-scripts/4a_submit_evaluation.sh --config {eval_file}")
+    daily_inputs = entry["cfg"].get("daily_input_vars", [])
+    if daily_inputs:
+        in_tpl = entry['cfg'].get("input_template", "input")
+        print(f"NOTE [{key}]: daily_input_vars={daily_inputs} are read from the DAILY "
+              f"input template, all other inputs from '{in_tpl}'. "
+              f"The eval config has a single --data-file-template ({eval_tpl(in_tpl)}); "
+              f"make sure the eval scripts use the daily template for {daily_inputs}.")
     print()
 

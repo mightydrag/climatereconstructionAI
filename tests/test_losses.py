@@ -154,6 +154,47 @@ def test_loss_computation_with_new_losses():
     assert abs(loss_dict["total"].item() - expected_total) < 1e-5
 
 
+def test_channel_thresholds_precip_conversion():
+    import numpy as np
+    from climatereconstructionai.loss.get_loss import channel_thresholds
+
+    cfg.data_types = ["tas", "pr"]
+    cfg.out_channels = 2
+    cfg.precip_log_transform = True
+    cfg.normalize_data = True
+    cfg.precip_log_names = ["tp", "pr"]
+    train_stats = {"mean": [0.1, 0.5], "std": [1.0, 0.8]}
+
+    # precip channel: raw 0.0 -> log1p(0)=0 -> z = (0 - 0.5) / 0.8 = -0.625
+    thresholds = channel_thresholds(0.0, train_stats)
+    assert thresholds[0] == 0.0  # non-precip channel unchanged (normalized space)
+    assert abs(thresholds[1] - (np.log1p(0.0) - 0.5) / 0.8) < 1e-12
+
+    # without log transform / normalization: unchanged
+    cfg.precip_log_transform = False
+    assert channel_thresholds(0.0, train_stats) == [0.0, 0.0]
+    cfg.precip_log_transform = True
+    cfg.normalize_data = False
+    assert channel_thresholds(0.0, train_stats) == [0.0, 0.0]
+    cfg.normalize_data = True
+
+    # raw-unit threshold of 0.1 mm: log1p(0.1) then z-norm
+    t = channel_thresholds(0.1, train_stats)
+    assert abs(t[1] - (np.log1p(0.1) - 0.5) / 0.8) < 1e-12
+
+
+def test_loss_accepts_per_channel_thresholds():
+    data_dict = make_data_dict(channels=2, positive_gt=True, seed=11)
+    loss_list = BernoulliLoss(1.0, [0.1, 0.2])(data_dict)["bern"]
+    loss_ch = sum(
+        BernoulliLoss(1.0, thr)(
+            {k: (v[:, c:c + 1] if v is not None else None) for k, v in data_dict.items()}
+        )["bern"]
+        for c, thr in enumerate([0.1, 0.2])
+    )
+    assert torch.allclose(loss_list, loss_ch)
+
+
 def test_set_lambdas_new_presets():
     cfg.lambda_loss = None
     for criterion, keys in [

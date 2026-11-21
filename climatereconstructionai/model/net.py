@@ -11,6 +11,7 @@ from .conv_configs import (
 from .encoder_decoder import EncoderBlock, DecoderBlock, sequence_to_batch, batch_to_sequence
 from .bounds_scaler import constrain_bounds
 from .graph_conv_module import GraphConvBlock
+from .time_pooling import TimePooling
 from .. import config as cfg
 
 
@@ -151,6 +152,12 @@ class CRAINet(nn.Module):
             )
         self.decoder = nn.ModuleList(decoding_layers)
 
+        # optional temporal pooling: collapse the input time window to a
+        # single (daily) output field directly inside the model
+        self.time_pooling = getattr(cfg, "time_pooling", "none")
+        if self.time_pooling != "none":
+            self.time_pool = TimePooling(self.time_pooling)
+
         # optional graph convolution (GNN) layers at the bottleneck
         self.gnn_layers = getattr(cfg, "gnn_layers", 0)
         if self.gnn_layers:
@@ -262,6 +269,12 @@ class CRAINet(nn.Module):
         #     for i in range(self.net_depth):
         #         hs[i] = torch.flip(hs[i], (1,))
         #         hs_mask[i] = torch.flip(hs_mask[i], (1,))
+
+        # collapse the time window to a single output field (e.g. daily)
+        if self.time_pooling != "none" and cfg.recurrent_steps:
+            for i in range(len(hs)):
+                hs[i] = self.time_pool(hs[i])
+                hs_mask[i] = hs_mask[i].mean(dim=1, keepdim=True)
 
         h, h_mask = hs[self.net_depth], hs_mask[self.net_depth]
 

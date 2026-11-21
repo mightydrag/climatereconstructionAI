@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 
 from .feature_loss import FeatureLoss
@@ -10,6 +11,7 @@ from .gamma_loss import GammaLoss, GammaLossValid
 from .bern_gamma_loss import BernoulliGammaLoss, BernoulliGammaLossValid
 from .. import config as cfg
 from ..utils.featurizer import VGG16FeatureExtractor
+from ..utils.normalizer import is_precip_data_type
 
 
 def select_channels(data_type_names):
@@ -18,6 +20,26 @@ def select_channels(data_type_names):
         return None
     target_types = cfg.data_types[-cfg.out_channels:]
     return [c for c in range(len(target_types)) if target_types[c] in data_type_names]
+
+
+def channel_thresholds(threshold, train_stats=None):
+    # per-output-channel thresholds. For precipitation types with
+    # --precip-log-transform + --normalize-data the CLI value is interpreted
+    # in raw units and converted through log1p + z-normalization with the
+    # training statistics, so e.g. 0.0 means "dry" in raw units
+    target_types = cfg.data_types[-cfg.out_channels:]
+    n = len(cfg.data_types)
+    convert = getattr(cfg, "precip_log_transform", False) and getattr(
+        cfg, "normalize_data", False
+    ) and train_stats is not None
+    thresholds = []
+    for c in range(cfg.out_channels):
+        t = threshold
+        if convert and is_precip_data_type(target_types[c]):
+            idx = n - cfg.out_channels + c
+            t = (np.log1p(max(float(threshold), 0.0)) - train_stats["mean"][idx]) / train_stats["std"][idx]
+        thresholds.append(t)
+    return thresholds
 
 
 def prepare_data_dict(img_mask, loss_mask, output, gt, tensor_keys):
@@ -64,12 +86,15 @@ def prepare_data_dict(img_mask, loss_mask, output, gt, tensor_keys):
 
 
 class loss_criterion(torch.nn.Module):
-    def __init__(self, lambda_dict):
+    def __init__(self, lambda_dict, train_stats=None):
         super().__init__()
 
         self.criterions = []
         self.tensors = ['output', 'gt', 'mask']
         style_added = False
+
+        bern_thresholds = channel_thresholds(getattr(cfg, 'bern_threshold', 0.0), train_stats)
+        gamma_thresholds = channel_thresholds(getattr(cfg, 'gamma_threshold', 0.0), train_stats)
 
         for loss, lambda_ in lambda_dict.items():
             if lambda_ > 0:
@@ -94,6 +119,15 @@ class loss_criterion(torch.nn.Module):
                 elif loss == 'tv_valid':
                     self.criterions.append(TotalVariationLossValid().to(cfg.device))
 
+                elif loss == 'bern':
+                    self.criterions.append(BernoulliLoss(getattr(cfg, 'bern_pos_weight', 1.0),
+                                                         bern_thresholds).to(cfg.device))
+                    self.tensors.append('bern')
+
+                elif loss == 'bern_valid':
+                    self.criterions.append(BernoulliLossValid(getattr(cfg, 'bern_pos_weight', 1.0),
+                                                              bern_thresholds).to(cfg.device))
+
                 elif loss == 'precip':
                     self.criterions.append(PrecipLoss(getattr(cfg, 'precip_loss_alpha', 1.0)).to(cfg.device))
                     self.tensors.append('precip')
@@ -101,32 +135,23 @@ class loss_criterion(torch.nn.Module):
                 elif loss == 'precip_valid':
                     self.criterions.append(PrecipLossValid(getattr(cfg, 'precip_loss_alpha', 1.0)).to(cfg.device))
 
-                elif loss == 'bern':
-                    self.criterions.append(BernoulliLoss(getattr(cfg, 'bern_pos_weight', 1.0),
-                                                         getattr(cfg, 'bern_threshold', 0.0)).to(cfg.device))
-                    self.tensors.append('bern')
-
-                elif loss == 'bern_valid':
-                    self.criterions.append(BernoulliLossValid(getattr(cfg, 'bern_pos_weight', 1.0),
-                                                              getattr(cfg, 'bern_threshold', 0.0)).to(cfg.device))
-
                 elif loss == 'gamma':
                     gamma_channels = select_channels(getattr(cfg, 'gamma_data_types', None))
-                    self.criterions.append(GammaLoss(getattr(cfg, 'gamma_threshold', 0.0),
+                    self.criterions.append(GammaLoss(gamma_thresholds,
                                                      getattr(cfg, 'gamma_shape', 1.0),
                                                      gamma_channels).to(cfg.device))
                     self.tensors.append('gamma')
 
                 elif loss == 'gamma_valid':
                     gamma_channels = select_channels(getattr(cfg, 'gamma_data_types', None))
-                    self.criterions.append(GammaLossValid(getattr(cfg, 'gamma_threshold', 0.0),
+                    self.criterions.append(GammaLossValid(gamma_thresholds,
                                                           getattr(cfg, 'gamma_shape', 1.0),
                                                           gamma_channels).to(cfg.device))
 
                 elif loss == 'bern_gamma':
                     gamma_channels = select_channels(getattr(cfg, 'gamma_data_types', None))
                     self.criterions.append(BernoulliGammaLoss(getattr(cfg, 'bern_pos_weight', 1.0),
-                                                              getattr(cfg, 'bern_threshold', 0.0),
+                                                              bern_thresholds,
                                                               getattr(cfg, 'gamma_shape', 1.0),
                                                               gamma_channels).to(cfg.device))
                     self.tensors.append('bern_gamma')
@@ -134,7 +159,7 @@ class loss_criterion(torch.nn.Module):
                 elif loss == 'bern_gamma_valid':
                     gamma_channels = select_channels(getattr(cfg, 'gamma_data_types', None))
                     self.criterions.append(BernoulliGammaLossValid(getattr(cfg, 'bern_pos_weight', 1.0),
-                                                                   getattr(cfg, 'bern_threshold', 0.0),
+                                                                   bern_thresholds,
                                                                    getattr(cfg, 'gamma_shape', 1.0),
                                                                    gamma_channels).to(cfg.device))
 
@@ -158,12 +183,12 @@ class loss_criterion(torch.nn.Module):
 
 
 class LossComputation(torch.nn.Module):
-    def __init__(self, lambda_dict):
+    def __init__(self, lambda_dict, train_stats=None):
         super().__init__()
         if cfg.multi_gpus:
-            self.criterion = torch.nn.DataParallel(loss_criterion(lambda_dict))
+            self.criterion = torch.nn.DataParallel(loss_criterion(lambda_dict, train_stats))
         else:
-            self.criterion = loss_criterion(lambda_dict)
+            self.criterion = loss_criterion(lambda_dict, train_stats)
 
     def forward(self, img_mask, loss_mask, output, gt):
         loss_dict = self.criterion(img_mask, loss_mask, output ,gt)

@@ -150,7 +150,7 @@ def train(arg_file=None):
         lr = cfg.lr
 
     early_stop = early_stopping.early_stopping()
-    loss_comp = get_loss.LossComputation(cfg.lambda_dict)
+    loss_comp = get_loss.LossComputation(cfg.lambda_dict, train_stats)
 
     # define optimizer and loss functions
     optimizer = torch.optim.Adam(
