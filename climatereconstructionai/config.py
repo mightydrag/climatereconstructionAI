@@ -414,6 +414,16 @@ def set_common_args():
         help="Use a custom padding for global dataset",
     )
     arg_parser.add_argument(
+        "--target-aggregation",
+        choices=("none", "sum", "mean"),
+        default="none",
+        help="Aggregate the model output over the input time window before the "
+        "loss/evaluation ('sum' or 'mean'), for sub-daily inputs with an "
+        "aggregated (e.g. daily) target. Requires --n-target-data > 0 and "
+        "recurrent steps (--lstm-steps/--gru-steps). Default 'none' keeps the "
+        "center-timestep behavior",
+    )
+    arg_parser.add_argument(
         "--gnn-layers",
         type=int,
         default=0,

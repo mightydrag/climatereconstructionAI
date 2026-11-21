@@ -28,7 +28,14 @@ def prepare_data_dict(img_mask, loss_mask, output, gt, tensor_keys):
     #     mask[mask < 0] = 0
     #     mask[mask > 1] = 1
     #     assert ((mask == 0) | (mask == 1)).all(), "Not all values in mask are zeros or ones!"
-    output = output[:, cfg.recurrent_steps, :, :, :]
+    aggregation = getattr(cfg, "target_aggregation", "none")
+    if aggregation == "sum":
+        # sub-daily outputs are aggregated (e.g. daily precipitation sum)
+        output = output.sum(dim=1)
+    elif aggregation == "mean":
+        output = output.mean(dim=1)
+    else:
+        output = output[:, cfg.recurrent_steps, :, :, :]
     mask = mask[:, cfg.recurrent_steps, :, :, :]
     gt = gt[:, cfg.recurrent_steps, cfg.gt_channels, :, :]
 

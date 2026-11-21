@@ -101,7 +101,7 @@ usage: crai-train [-h] [--data-root-dir DATA_ROOT_DIR] [--mask-dir MASK_DIR] [--
                   [--n-target-data N_TARGET_DATA] [--device DEVICE] [--shuffle-masks] [--channel-steps CHANNEL_STEPS] [--lstm-steps LSTM_STEPS] [--gru-steps GRU_STEPS]
                   [--encoding-layers ENCODING_LAYERS] [--pooling-layers POOLING_LAYERS] [--conv-factor CONV_FACTOR] [--weights WEIGHTS] [--steady-masks STEADY_MASKS]
                   [--loop-random-seed LOOP_RANDOM_SEED] [--cuda-random-seed CUDA_RANDOM_SEED] [--deterministic] [--attention] [--channel-reduction-rate CHANNEL_REDUCTION_RATE] [--disable-skip-layers]
-                  [--disable-first-bn] [--masked-bn] [--lazy-load] [--global-padding] [--gnn-layers GNN_LAYERS] [--gnn-neighbors GNN_NEIGHBORS] [--normalize-data] [--n-filters N_FILTERS] [--out-channels OUT_CHANNELS] [--dataset-name DATASET_NAME]
+                  [--disable-first-bn] [--masked-bn] [--lazy-load] [--global-padding] [--gnn-layers GNN_LAYERS] [--gnn-neighbors GNN_NEIGHBORS] [--target-aggregation {none,sum,mean}] [--normalize-data] [--n-filters N_FILTERS] [--out-channels OUT_CHANNELS] [--dataset-name DATASET_NAME]
                   [--min-bounds MIN_BOUNDS] [--max-bounds MAX_BOUNDS] [--profile] [--val-names VAL_NAMES] [--snapshot-dir SNAPSHOT_DIR] [--resume-iter RESUME_ITER] [--batch-size BATCH_SIZE]
                   [--n-threads N_THREADS] [--multi-gpus] [--finetune] [--lr LR] [--lr-finetune LR_FINETUNE] [--max-iter MAX_ITER] [--log-interval LOG_INTERVAL]
                   [--lr-scheduler-patience LR_SCHEDULER_PATIENCE] [--save-model-interval SAVE_MODEL_INTERVAL] [--n-final-models N_FINAL_MODELS] [--final-models-interval FINAL_MODELS_INTERVAL]
@@ -157,6 +157,8 @@ options:
                         Number of graph convolution (GNN) layers applied at the bottleneck of the U-Net, treating grid cells as nodes (0 disables the GNN)
   --gnn-neighbors GNN_NEIGHBORS
                         Number of grid neighbours per node used for message passing in the GNN layers (4 or 8)
+  --target-aggregation {none,sum,mean}
+                        Aggregate the model output over the input time window before the loss/evaluation ('sum' or 'mean'), for sub-daily inputs with an aggregated (e.g. daily) target. Requires --n-target-data > 0 and recurrent steps (--lstm-steps/--gru-steps). Default 'none' keeps the center-timestep behavior
   --precip-log-transform Apply log1p to precipitation data types before normalization (reduces skewness of the precipitation distribution)
   --precip-log-names PRECIP_LOG_NAMES
                           Comma separated data type names treated as precipitation for --precip-log-transform
@@ -236,7 +238,7 @@ usage: crai-evaluate [-h] [--data-root-dir DATA_ROOT_DIR] [--mask-dir MASK_DIR] 
                      [--n-target-data N_TARGET_DATA] [--device DEVICE] [--shuffle-masks] [--channel-steps CHANNEL_STEPS] [--lstm-steps LSTM_STEPS] [--gru-steps GRU_STEPS]
                      [--encoding-layers ENCODING_LAYERS] [--pooling-layers POOLING_LAYERS] [--conv-factor CONV_FACTOR] [--weights WEIGHTS] [--steady-masks STEADY_MASKS]
                      [--loop-random-seed LOOP_RANDOM_SEED] [--cuda-random-seed CUDA_RANDOM_SEED] [--deterministic] [--attention] [--channel-reduction-rate CHANNEL_REDUCTION_RATE] [--disable-skip-layers]
-                     [--disable-first-bn] [--masked-bn] [--lazy-load] [--global-padding] [--gnn-layers GNN_LAYERS] [--gnn-neighbors GNN_NEIGHBORS] [--normalize-data] [--n-filters N_FILTERS] [--out-channels OUT_CHANNELS] [--dataset-name DATASET_NAME]
+                     [--disable-first-bn] [--masked-bn] [--lazy-load] [--global-padding] [--gnn-layers GNN_LAYERS] [--gnn-neighbors GNN_NEIGHBORS] [--target-aggregation {none,sum,mean}] [--normalize-data] [--n-filters N_FILTERS] [--out-channels OUT_CHANNELS] [--dataset-name DATASET_NAME]
                      [--min-bounds MIN_BOUNDS] [--max-bounds MAX_BOUNDS] [--profile] [--model-dir MODEL_DIR] [--model-names MODEL_NAMES] [--evaluation-dirs EVALUATION_DIRS] [--eval-names EVAL_NAMES]
                      [--use-train-stats] [--create-graph] [--plot-results PLOT_RESULTS] [--partitions PARTITIONS] [--maxmem MAXMEM] [--split-outputs] [-f LOAD_FROM_FILE]
 
@@ -335,6 +337,7 @@ For the architecture:
 
 - `--gnn-layers N` adds N graph convolution layers at the bottleneck of the U-Net, where each grid cell is a node and messages are passed between its `--gnn-neighbors` (4 or 8) nearest grid neighbours (circular in longitude with `--global-padding`). This provides GNN-style spatial message passing without additional dependencies.
 - Temporal dependence between time steps is modelled with the recurrent options `--lstm-steps past,future` (ConvLSTM) or `--gru-steps past,future` (TrajGRU), or with `--channel-steps past,future` for channeled memory; these can be combined with the GNN layers.
+- `--target-aggregation sum|mean` enables **sub-daily inputs with an aggregated (e.g. daily) target**: the last `--n-target-data` files may have a shorter time axis (e.g. daily) than the input files (e.g. 3-hourly); each sample is indexed in target space, inputs are loaded with the sub-daily window (`--lstm-steps past,future`) around that sample, and the model output is aggregated over the window (`sum` for precipitation totals, `mean` for the other variables) before the loss and at evaluation. Note: if the sub-daily inputs are only interpolations of daily data, they carry no additional information and this will not improve results.
 
 Example (sub-daily precipitation infilling with a Bernoulli-Gamma loss, GNN bottleneck and temporal recurrence):
 
@@ -343,6 +346,17 @@ crai-train --data-names pr.nc --data-types pr --n-target-data 1 --out-channels 1
   --precip-log-transform --normalize-data \
   --loss-criterion 9 --gamma-data-types pr \
   --gnn-layers 2 --gnn-neighbors 8 --lstm-steps 2,1
+```
+
+Example (genuinely sub-daily inputs downscaled to a daily precipitation target):
+
+```bash
+crai-train --data-names tas_3h.nc,pr_day.nc --data-types tas,pr \
+  --n-target-data 1 --out-channels 1 \
+  --precip-log-transform --normalize-data \
+  --loss-criterion 9 \
+  --lstm-steps 3,4 --target-aggregation sum \
+  --gnn-layers 2 --gnn-neighbors 8
 ```
 
 ## Example

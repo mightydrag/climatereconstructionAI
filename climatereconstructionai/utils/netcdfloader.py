@@ -44,13 +44,21 @@ class InfiniteSampler(Sampler):
 
     def loop(self):
         i = 0
-        n_samples = self.num_samples - sum(cfg.time_steps)
-        order = np.random.permutation(n_samples) + cfg.time_steps[0]
+        if getattr(cfg, "target_aggregation", "none") != "none":
+            # samples are already indexed in target space; windows are clamped
+            n_samples = self.num_samples
+            order = np.random.permutation(n_samples)
+        else:
+            n_samples = self.num_samples - sum(cfg.time_steps)
+            order = np.random.permutation(n_samples) + cfg.time_steps[0]
         while True:
             yield order[i]
             i += 1
             if i >= n_samples:
-                order = np.random.permutation(n_samples) + cfg.time_steps[0]
+                if getattr(cfg, "target_aggregation", "none") != "none":
+                    order = np.random.permutation(n_samples)
+                else:
+                    order = np.random.permutation(n_samples) + cfg.time_steps[0]
                 i = 0
 
 
@@ -60,6 +68,8 @@ class FiniteSampler(Sampler):
         self.num_samples = num_samples
 
     def __iter__(self):
+        if getattr(cfg, "target_aggregation", "none") != "none":
+            return iter(range(self.num_samples))
         return iter(range(cfg.time_steps[0], self.num_samples - cfg.time_steps[1]))
 
     def __len__(self):
@@ -145,12 +155,24 @@ def load_netcdf(path, data_names, data_types, keep_dss=False):
             lengths.append(length)
             sizes.append(size[0])
 
-    assert len(set(lengths)) == 1
+    agg_active = getattr(cfg, "target_aggregation", "none") != "none" and cfg.n_target_data > 0
+    if agg_active and len(data_names) > cfg.n_target_data:
+        # with --target-aggregation the last n_target_data entries (targets)
+        # may have a shorter time axis (e.g. daily) than the input entries
+        n_inputs = len(lengths) - cfg.n_target_data
+        assert len(set(lengths[:n_inputs])) == 1, (
+            "All input data files must have the same length"
+        )
+        assert len(set(lengths[n_inputs:])) == 1, (
+            "All target data files must have the same length"
+        )
+    else:
+        assert len(set(lengths)) == 1
 
     if keep_dss:
-        return dss, data, lengths[0], sizes
+        return dss, data, lengths, sizes
     else:
-        return data, lengths[0], sizes
+        return data, lengths, sizes
 
 
 class NetCDFLoader(Dataset):
@@ -178,7 +200,7 @@ class NetCDFLoader(Dataset):
         mask_path = mask_root
         if split == "infill":
             data_path = os.path.join(data_root, "test/")
-            self.xr_dss, self.img_data, self.img_length, self.img_sizes = load_netcdf(
+            self.xr_dss, self.img_data, img_all_lengths, self.img_sizes = load_netcdf(
                 data_path, img_names, data_types, keep_dss=True
             )
         else:
@@ -188,20 +210,53 @@ class NetCDFLoader(Dataset):
                 data_path = "{:s}/val/".format(data_root)
                 if not cfg.shuffle_masks:
                     mask_path = "{:s}/val/".format(mask_root)
-            self.img_data, self.img_length, self.img_sizes = load_netcdf(
+            self.img_data, img_all_lengths, self.img_sizes = load_netcdf(
                 data_path, img_names, data_types
             )
 
-        self.mask_data, self.mask_length, _ = load_netcdf(
+        self.mask_data, mask_all_lengths, _ = load_netcdf(
             mask_path, mask_names, data_types
         )
 
+        self.all_lengths = img_all_lengths
+        self.img_length = img_all_lengths[0]
         if self.mask_data is None:
             self.mask_length = self.img_length
+            mask_all_lengths = img_all_lengths
         else:
+            self.mask_length = mask_all_lengths[0]
             if not cfg.shuffle_masks:
                 print(self.mask_length, self.img_length)
                 assert self.img_length == self.mask_length
+        self.mask_all_lengths = mask_all_lengths
+
+        # sub-daily inputs with an aggregated (e.g. daily) target:
+        # samples are indexed in target (daily) space, inputs are loaded with
+        # a sub-daily window around sample_index * time_factor
+        self.target_aggregation = getattr(cfg, "target_aggregation", "none")
+        self.time_factor = 1
+        self.sample_lengths = [list(entry) for entry in self.all_lengths]
+        self.mask_sample_lengths = [list(entry) for entry in self.mask_all_lengths]
+        if self.target_aggregation != "none":
+            assert cfg.n_target_data > 0, (
+                "--target-aggregation requires --n-target-data > 0"
+            )
+            n_inputs = len(self.all_lengths) - cfg.n_target_data
+            assert n_inputs > 0
+            input_length = sum(self.all_lengths[0])
+            target_length = sum(self.all_lengths[-1])
+            assert input_length % target_length == 0, (
+                "The input time axis ({}) must be a multiple of the target "
+                "time axis ({})".format(input_length, target_length)
+            )
+            self.time_factor = input_length // target_length
+            for e in range(n_inputs):
+                self.sample_lengths[e] = [
+                    entry // self.time_factor for entry in self.all_lengths[e]
+                ]
+                self.mask_sample_lengths[e] = [
+                    entry // self.time_factor for entry in self.mask_all_lengths[e]
+                ]
         if getattr(cfg, "precip_log_transform", False):
             for i in range(len(self.img_data)):
                 if is_precip_data_type(self.data_types[i]):
@@ -234,26 +289,71 @@ class NetCDFLoader(Dataset):
         return image, mask
 
     def get_single_item(
-        self, ind_data, index, shuffle_masks, mask_indices=None, mask_ds_index=None
+        self, ind_data, index, shuffle_masks, mask_indices=None, mask_ds_index=None,
+        mask_sample=None,
     ):
+        agg = self.target_aggregation != "none"
+        is_target = agg and ind_data >= len(self.data_types) - cfg.n_target_data
+
+        # in aggregation mode samples are indexed in target (e.g. daily) space
+        entry_lengths = self.all_lengths[ind_data] if agg else self.img_length
+        search_lengths = self.sample_lengths[ind_data] if agg else self.img_length
+
         # get index of dataset
         ds_index = 0
         current_index = 0
-        for l in range(len(self.img_length)):
-            if index > current_index + self.img_length[l]:
-                current_index += self.img_length[l]
+        for f in range(len(search_lengths)):
+            if index > current_index + search_lengths[f]:
+                current_index += search_lengths[f]
                 ds_index += 1
         index -= current_index
 
-        # define range of lstm or prev-next steps -> adjust, if out of boundaries
-        img_indices = np.array(
-            list(range(index - self.time_steps[0], index + self.time_steps[1] + 1))
-        )
+        if agg and is_target:
+            # the aggregated target is a single (daily) step, repeated over the window
+            center = index
+            img_indices = np.full(self.n_time_steps, index)
+        else:
+            # inputs use a sub-daily window around the sample's center step
+            center = index * self.time_factor if agg else index
+            img_indices = np.array(
+                list(range(center - self.time_steps[0], center + self.time_steps[1] + 1))
+            )
         img_indices[img_indices < 0] = 0
-        img_indices[img_indices > self.img_length[ds_index] - 1] = (
-            self.img_length[ds_index] - 1
+        img_indices[img_indices > entry_lengths[ds_index] - 1] = (
+            entry_lengths[ds_index] - 1
         )
-        if shuffle_masks and mask_indices is None:
+        if shuffle_masks and agg:
+            # mask sample drawn once in target (sample) space in __getitem__
+            if mask_sample is None:
+                mask_indices = img_indices
+                mask_ds_index = ds_index
+            else:
+                mask_lengths = self.mask_all_lengths[ind_data]
+                mask_search = self.mask_sample_lengths[ind_data]
+                mask_ds_index = 0
+                current_index = 0
+                for f in range(len(mask_search)):
+                    if mask_sample > current_index + mask_search[f]:
+                        current_index += mask_search[f]
+                        mask_ds_index += 1
+                mask_index = mask_sample - current_index
+                if is_target:
+                    mask_indices = np.full(self.n_time_steps, mask_index)
+                else:
+                    mask_center = mask_index * self.time_factor
+                    mask_indices = np.array(
+                        list(
+                            range(
+                                mask_center - self.time_steps[0],
+                                mask_center + self.time_steps[1] + 1,
+                            )
+                        )
+                    )
+                mask_indices[mask_indices < 0] = 0
+                mask_indices[mask_indices > mask_lengths[mask_ds_index] - 1] = (
+                    mask_lengths[mask_ds_index] - 1
+                )
+        elif shuffle_masks and mask_indices is None:
             mask_index = self.random.randint(0, sum(self.mask_length) - 1)
             mask_ds_index = 0
             current_index = 0
@@ -301,11 +401,14 @@ class NetCDFLoader(Dataset):
         ndata = len(self.data_types)
         mask_indices = None
         mask_ds_index = None
+        mask_sample = None
+        if self.target_aggregation != "none" and cfg.shuffle_masks:
+            mask_sample = self.random.randint(0, len(self) - 1)
 
         for i in range(ndata):
 
             image, mask, mask_indices, mask_ds_index = self.get_single_item(
-                i, index, cfg.shuffle_masks, mask_indices, mask_ds_index
+                i, index, cfg.shuffle_masks, mask_indices, mask_ds_index, mask_sample
             )
 
             if i >= ndata - cfg.n_target_data:
@@ -332,4 +435,7 @@ class NetCDFLoader(Dataset):
             )
 
     def __len__(self):
+        if self.target_aggregation != "none":
+            # all entries share the same sample (target-space) index range
+            return sum(self.sample_lengths[-1])
         return sum(self.img_length)
