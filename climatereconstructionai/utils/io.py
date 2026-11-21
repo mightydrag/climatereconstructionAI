@@ -1,3 +1,5 @@
+import re
+
 import torch
 import torch.nn as nn
 
@@ -35,15 +37,21 @@ def load_ckpt(ckpt_name, device):
     return ckpt_dict
 
 
+def remap_state_dict_keys(state_dict):
+    remapped = {}
+    for key, value in state_dict.items():
+        key = re.sub(r"^module\.", "", key)
+        key = re.sub(r"^attention_(\d+)\.", r"attention_module.\1.", key)
+        remapped[key] = value
+    return remapped
+
+
 def load_model(ckpt_dict, model, optimizer=None, label=None):
     assert isinstance(model, nn.Module)
     if label is None:
         label = ckpt_dict["labels"][-1]
 
-    ckpt_dict[label]["model"] = {
-        key.replace("module.", ""): value
-        for key, value in ckpt_dict[label]["model"].items()
-    }
+    ckpt_dict[label]["model"] = remap_state_dict_keys(ckpt_dict[label]["model"])
     model.load_state_dict(ckpt_dict[label]["model"])
     if optimizer is not None:
         optimizer.load_state_dict(ckpt_dict[label]["optimizer"])
