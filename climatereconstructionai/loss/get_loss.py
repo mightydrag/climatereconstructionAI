@@ -6,8 +6,18 @@ from .total_variation_loss import TotalVariationLoss, TotalVariationLossValid
 from .valid_loss import ValidLoss
 from .bernoulli_loss import BernoulliLoss, BernoulliLossValid
 from .precip_loss import PrecipLoss, PrecipLossValid
+from .gamma_loss import GammaLoss, GammaLossValid
+from .bern_gamma_loss import BernoulliGammaLoss, BernoulliGammaLossValid
 from .. import config as cfg
 from ..utils.featurizer import VGG16FeatureExtractor
+
+
+def select_channels(data_type_names):
+    # map data type names to output channel indices; None selects all channels
+    if not data_type_names:
+        return None
+    target_types = cfg.data_types[-cfg.out_channels:]
+    return [c for c in range(len(target_types)) if target_types[c] in data_type_names]
 
 
 def prepare_data_dict(img_mask, loss_mask, output, gt, tensor_keys):
@@ -18,7 +28,14 @@ def prepare_data_dict(img_mask, loss_mask, output, gt, tensor_keys):
     #     mask[mask < 0] = 0
     #     mask[mask > 1] = 1
     #     assert ((mask == 0) | (mask == 1)).all(), "Not all values in mask are zeros or ones!"
-    output = output[:, cfg.recurrent_steps, :, :, :]
+    aggregation = getattr(cfg, "target_aggregation", "none")
+    if aggregation == "sum":
+        # sub-daily outputs are aggregated (e.g. daily precipitation sum)
+        output = output.sum(dim=1)
+    elif aggregation == "mean":
+        output = output.mean(dim=1)
+    else:
+        output = output[:, cfg.recurrent_steps, :, :, :]
     mask = mask[:, cfg.recurrent_steps, :, :, :]
     gt = gt[:, cfg.recurrent_steps, cfg.gt_channels, :, :]
 
@@ -92,6 +109,34 @@ class loss_criterion(torch.nn.Module):
                 elif loss == 'bern_valid':
                     self.criterions.append(BernoulliLossValid(getattr(cfg, 'bern_pos_weight', 1.0),
                                                               getattr(cfg, 'bern_threshold', 0.0)).to(cfg.device))
+
+                elif loss == 'gamma':
+                    gamma_channels = select_channels(getattr(cfg, 'gamma_data_types', None))
+                    self.criterions.append(GammaLoss(getattr(cfg, 'gamma_threshold', 0.0),
+                                                     getattr(cfg, 'gamma_shape', 1.0),
+                                                     gamma_channels).to(cfg.device))
+                    self.tensors.append('gamma')
+
+                elif loss == 'gamma_valid':
+                    gamma_channels = select_channels(getattr(cfg, 'gamma_data_types', None))
+                    self.criterions.append(GammaLossValid(getattr(cfg, 'gamma_threshold', 0.0),
+                                                          getattr(cfg, 'gamma_shape', 1.0),
+                                                          gamma_channels).to(cfg.device))
+
+                elif loss == 'bern_gamma':
+                    gamma_channels = select_channels(getattr(cfg, 'gamma_data_types', None))
+                    self.criterions.append(BernoulliGammaLoss(getattr(cfg, 'bern_pos_weight', 1.0),
+                                                              getattr(cfg, 'bern_threshold', 0.0),
+                                                              getattr(cfg, 'gamma_shape', 1.0),
+                                                              gamma_channels).to(cfg.device))
+                    self.tensors.append('bern_gamma')
+
+                elif loss == 'bern_gamma_valid':
+                    gamma_channels = select_channels(getattr(cfg, 'gamma_data_types', None))
+                    self.criterions.append(BernoulliGammaLossValid(getattr(cfg, 'bern_pos_weight', 1.0),
+                                                                   getattr(cfg, 'bern_threshold', 0.0),
+                                                                   getattr(cfg, 'gamma_shape', 1.0),
+                                                                   gamma_channels).to(cfg.device))
 
 
     def forward(self, img_mask, loss_mask, output, gt):
