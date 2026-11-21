@@ -352,7 +352,7 @@ Besides the reconstruction losses above, the training supports distribution-awar
 - `--loss-criterion 11`: **gamma** loss (negative log-likelihood of a gamma distribution) on the hole region, e.g. for wind speed or humidity.
 - Individual loss terms can also be combined freely via `--lambda-loss`, e.g. `--lambda-loss valid,1.0 bern_gamma,6.0 tv,0.1`. The available terms are `valid`, `hole`, `tv`, `tv_valid`, `precip`, `precip_valid`, `bern`, `bern_valid`, `gamma`, `gamma_valid`, `bern_gamma`, `bern_gamma_valid`, `prc` and `style`.
 - With `--gamma-data-types pr,hurs` the gamma/Bernoulli-Gamma terms are restricted to the output channels of the listed data types (useful for multi-variable setups where, e.g., only precipitation and humidity should be treated distributionally).
-- Combined with `--precip-log-transform`, a threshold of `0.0` in the transformed space separates dry from wet pixels.
+- `--bern-threshold` / `--gamma-threshold` are compared against the (normalized) target. Exception: for precipitation types with `--precip-log-transform` **and** `--normalize-data`, the threshold is interpreted in **raw units** and converted automatically via log1p + z-norm using the training statistics, so `--bern-threshold 0.0` means exactly "dry" (raw 0). Without `--normalize-data`, `0.0` in log1p space is already dry.
 
 For the architecture:
 

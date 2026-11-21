@@ -14,6 +14,7 @@ class BernoulliGammaLoss(nn.Module):
         self.bce = nn.BCELoss(reduction="none")
         self.pos_weight = pos_weight
         self.threshold = threshold
+        self.thresholds = list(threshold) if isinstance(threshold, (list, tuple)) else None
         self.shape = shape
         self.channels = channels
 
@@ -34,11 +35,12 @@ class BernoulliGammaLoss(nn.Module):
 
         # calculate loss for the selected channels
         for channel in channel_ids:
+            thr = self.thresholds[channel] if self.thresholds is not None else self.threshold
             mask_ch = torch.unsqueeze(mask[:, channel, :, :], dim=1)
             gt_ch = torch.unsqueeze(gt[:, channel, :, :], dim=1)
             output_ch = torch.unsqueeze(output[:, channel, :, :], dim=1)
 
-            target = (gt_ch > self.threshold).float()
+            target = (gt_ch > thr).float()
             pred = torch.sigmoid(output_ch).clamp(1e-6, 1 - 1e-6)
             weight_bern = 1.0 + (self.pos_weight - 1.0) * target
 
@@ -69,6 +71,7 @@ class BernoulliGammaLossValid(nn.Module):
         self.bce = nn.BCELoss(reduction="none")
         self.pos_weight = pos_weight
         self.threshold = threshold
+        self.thresholds = list(threshold) if isinstance(threshold, (list, tuple)) else None
         self.shape = shape
         self.channels = channels
 
@@ -89,11 +92,12 @@ class BernoulliGammaLossValid(nn.Module):
 
         # calculate loss for the selected channels
         for channel in channel_ids:
+            thr = self.thresholds[channel] if self.thresholds is not None else self.threshold
             mask_ch = torch.unsqueeze(mask[:, channel, :, :], dim=1)
             gt_ch = torch.unsqueeze(gt[:, channel, :, :], dim=1)
             output_ch = torch.unsqueeze(output[:, channel, :, :], dim=1)
 
-            target = (gt_ch > self.threshold).float()
+            target = (gt_ch > thr).float()
             pred = torch.sigmoid(output_ch).clamp(1e-6, 1 - 1e-6)
             weight_bern = 1.0 + (self.pos_weight - 1.0) * target
 

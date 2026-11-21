@@ -17,6 +17,7 @@ class GammaLoss(nn.Module):
     def __init__(self, threshold=0.0, shape=1.0, channels=None):
         super().__init__()
         self.threshold = threshold
+        self.thresholds = list(threshold) if isinstance(threshold, (list, tuple)) else None
         self.shape = shape
         self.channels = channels
 
@@ -37,6 +38,7 @@ class GammaLoss(nn.Module):
 
         # calculate loss for the selected channels
         for channel in channel_ids:
+            thr = self.thresholds[channel] if self.thresholds is not None else self.threshold
             mask_ch = torch.unsqueeze(mask[:, channel, :, :], dim=1)
             gt_ch = torch.unsqueeze(gt[:, channel, :, :], dim=1)
             output_ch = torch.unsqueeze(output[:, channel, :, :], dim=1)
@@ -44,7 +46,7 @@ class GammaLoss(nn.Module):
             # predicted mean of the gamma distribution (strictly positive)
             mean = F.softplus(output_ch) + 1e-6
             # only pixels above the threshold contribute (e.g. wet pixels for precipitation)
-            wet = (gt_ch > self.threshold).float()
+            wet = (gt_ch > thr).float()
 
             if loss_mask is not None:
                 loss_mask_ch = torch.unsqueeze(loss_mask[:, channel, :, :], dim=1)
@@ -63,6 +65,7 @@ class GammaLossValid(nn.Module):
     def __init__(self, threshold=0.0, shape=1.0, channels=None):
         super().__init__()
         self.threshold = threshold
+        self.thresholds = list(threshold) if isinstance(threshold, (list, tuple)) else None
         self.shape = shape
         self.channels = channels
 
@@ -83,12 +86,13 @@ class GammaLossValid(nn.Module):
 
         # calculate loss for the selected channels
         for channel in channel_ids:
+            thr = self.thresholds[channel] if self.thresholds is not None else self.threshold
             mask_ch = torch.unsqueeze(mask[:, channel, :, :], dim=1)
             gt_ch = torch.unsqueeze(gt[:, channel, :, :], dim=1)
             output_ch = torch.unsqueeze(output[:, channel, :, :], dim=1)
 
             mean = F.softplus(output_ch) + 1e-6
-            wet = (gt_ch > self.threshold).float()
+            wet = (gt_ch > thr).float()
 
             if loss_mask is not None:
                 loss_mask_ch = torch.unsqueeze(loss_mask[:, channel, :, :], dim=1)

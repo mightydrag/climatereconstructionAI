@@ -669,8 +669,11 @@ def set_train_args(arg_file=None):
         "--bern-threshold",
         type=float,
         default=0.0,
-        help="Threshold on the (normalized) target above which a pixel counts "
-        "as wet in the Bernoulli loss",
+        help="Threshold above which a pixel counts as wet in the Bernoulli/"
+        "Bernoulli-Gamma loss. On the (normalized) target; for precipitation "
+        "types with --precip-log-transform + --normalize-data the value is "
+        "interpreted in raw units and converted via log1p + z-norm (so 0.0 "
+        "means dry)",
     )
     arg_parser.add_argument(
         "--gamma-shape",
@@ -683,8 +686,10 @@ def set_train_args(arg_file=None):
         "--gamma-threshold",
         type=float,
         default=0.0,
-        help="Threshold on the (normalized) target above which a pixel contributes "
-        "to the gamma (amount) loss",
+        help="Threshold above which a pixel contributes to the gamma (amount) "
+        "loss. On the (normalized) target; for precipitation types with "
+        "--precip-log-transform + --normalize-data the value is interpreted in "
+        "raw units and converted via log1p + z-norm (so 0.0 means dry)",
     )
     arg_parser.add_argument(
         "--gamma-data-types",
