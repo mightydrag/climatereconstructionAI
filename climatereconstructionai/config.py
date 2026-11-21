@@ -448,6 +448,16 @@ def set_common_args():
         help="Comma separated list of values defining the permitted upper-bound of output values",
     )
     arg_parser.add_argument(
+        "--qdm-input-file",
+        type=str,
+        default=None,
+        help="Path to a fitted quantile delta mapping file (.npz, see "
+        "climatereconstructionai.quantile_mapping) used to bias-correct the input "
+        "fields (e.g. MPI-GE) into the reference space the model was trained on "
+        "(e.g. CERRA) when the input data is loaded. Fit it with "
+        "'python -m climatereconstructionai.quantile_mapping fit'",
+    )
+    arg_parser.add_argument(
         "--snapshot-dir",
         type=str,
         default="snapshots/",
