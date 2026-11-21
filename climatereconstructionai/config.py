@@ -424,6 +424,15 @@ def set_common_args():
         "center-timestep behavior",
     )
     arg_parser.add_argument(
+        "--target-time-offset",
+        type=int,
+        default=0,
+        help="Offset (in input time steps) of each aggregated target sample "
+        "within the input files, used with --target-aggregation. Example: 2 for "
+        "3-hourly inputs starting at 00 UTC when the daily target is a "
+        "06UTC-06UTC accumulation",
+    )
+    arg_parser.add_argument(
         "--gnn-layers",
         type=int,
         default=0,

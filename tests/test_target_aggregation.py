@@ -12,6 +12,7 @@ def setup_cfg(**overrides):
     cfg.n_target_data = 1
     cfg.out_channels = 1
     cfg.target_aggregation = "none"
+    cfg.target_time_offset = 0
     cfg.precip_log_transform = False
     cfg.normalize_data = False
     cfg.lazy_load = False
@@ -91,6 +92,70 @@ def test_loader_sample_space_and_windows(tmp_path):
     for t in range(3):
         assert np.allclose(gt[t, 0].numpy(), pr_day[1])
     assert index == 1
+
+
+def test_loader_time_offset_shifts_window(tmp_path):
+    factor = 8
+    loader, tas_sub, pr_day = make_loader(
+        tmp_path, aggregation="sum", factor=factor, n_days=3, time_steps=(1, 1)
+    )
+    cfg.target_time_offset = 2
+    loader.target_time_offset = 2
+    image, mask, gt, index = loader[1]
+    # window of T=3 centered at day 1 start + offset -> steps 9, 10, 11
+    for t, sub_idx in enumerate((9, 10, 11)):
+        assert np.allclose(image[t, 0].numpy(), tas_sub[sub_idx])
+    for t in range(3):
+        assert np.allclose(gt[t, 0].numpy(), pr_day[1])
+
+
+def test_loader_with_daily_input(tmp_path):
+    from climatereconstructionai.utils.netcdfloader import NetCDFLoader
+
+    rng = np.random.default_rng(1)
+    factor, n_days = 8, 3
+    height, width = 4, 6
+    n_sub = n_days * factor
+    tas_sub = rng.random((n_sub, height, width)).astype("float32")
+    pr_day = rng.gamma(2.0, 1.0, size=(n_days, height, width)).astype("float32")
+    hurs_day = rng.random((n_days, height, width)).astype("float32") * 100
+
+    train_dir = tmp_path / "train"
+    mask_dir = tmp_path / "masks"
+    train_dir.mkdir()
+    mask_dir.mkdir()
+    write_nc(train_dir / "tas_3h.nc", "tas", tas_sub)
+    write_nc(train_dir / "pr_day.nc", "pr", pr_day)  # daily input
+    write_nc(train_dir / "hurs_day.nc", "hurs", hurs_day)  # daily target
+    write_nc(mask_dir / "tas_3h_mask.nc", "tas", np.ones((n_sub, height, width), dtype="float32"))
+    write_nc(mask_dir / "pr_day_mask.nc", "pr", np.ones((n_days, height, width), dtype="float32"))
+    write_nc(mask_dir / "hurs_day_mask.nc", "hurs", np.ones((n_days, height, width), dtype="float32"))
+
+    setup_cfg(target_aggregation="mean")
+    cfg.data_types = ["tas", "pr", "hurs"]
+    loader = NetCDFLoader(
+        str(tmp_path),
+        ["tas_3h.nc", "pr_day.nc", "hurs_day.nc"],
+        str(mask_dir),
+        ["tas_3h_mask.nc", "pr_day_mask.nc", "hurs_day_mask.nc"],
+        "train",
+        ["tas", "pr", "hurs"],
+        [1, 1],
+    )
+    assert loader.time_factor == factor
+    assert len(loader) == n_days
+
+    image, mask, gt, index = loader[1]
+    # two input channels: 3-hourly tas window + daily pr broadcast over the window
+    assert image.shape == (3, 2, height, width)
+    for t, sub_idx in enumerate((7, 8, 9)):
+        assert np.allclose(image[t, 0].numpy(), tas_sub[sub_idx])
+    for t in range(3):
+        assert np.allclose(image[t, 1].numpy(), pr_day[1])
+    # target is the daily hurs value, repeated over the window
+    assert gt.shape == (3, 1, height, width)
+    for t in range(3):
+        assert np.allclose(gt[t, 0].numpy(), hurs_day[1])
 
 
 def test_loader_rejects_mixed_lengths_without_aggregation(tmp_path):

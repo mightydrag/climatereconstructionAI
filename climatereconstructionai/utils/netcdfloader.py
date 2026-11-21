@@ -158,14 +158,18 @@ def load_netcdf(path, data_names, data_types, keep_dss=False):
     agg_active = getattr(cfg, "target_aggregation", "none") != "none" and cfg.n_target_data > 0
     if agg_active and len(data_names) > cfg.n_target_data:
         # with --target-aggregation the last n_target_data entries (targets)
-        # may have a shorter time axis (e.g. daily) than the input entries
+        # have the target (e.g. daily) time axis; input entries may be
+        # sub-daily (length a multiple of the target length) or daily as well
         n_inputs = len(lengths) - cfg.n_target_data
-        assert len(set(lengths[:n_inputs])) == 1, (
-            "All input data files must have the same length"
-        )
         assert len(set(lengths[n_inputs:])) == 1, (
             "All target data files must have the same length"
         )
+        target_length = sum(lengths[-1])
+        for entry in lengths[:n_inputs]:
+            assert sum(entry) % target_length == 0, (
+                "Each input file's time axis must be a multiple of the "
+                "target time axis ({})".format(target_length)
+            )
     else:
         assert len(set(lengths)) == 1
 
@@ -237,26 +241,47 @@ class NetCDFLoader(Dataset):
         self.time_factor = 1
         self.sample_lengths = [list(entry) for entry in self.all_lengths]
         self.mask_sample_lengths = [list(entry) for entry in self.mask_all_lengths]
+        self.target_time_offset = getattr(cfg, "target_time_offset", 0)
         if self.target_aggregation != "none":
             assert cfg.n_target_data > 0, (
                 "--target-aggregation requires --n-target-data > 0"
             )
             n_inputs = len(self.all_lengths) - cfg.n_target_data
             assert n_inputs > 0
-            input_length = sum(self.all_lengths[0])
             target_length = sum(self.all_lengths[-1])
-            assert input_length % target_length == 0, (
-                "The input time axis ({}) must be a multiple of the target "
-                "time axis ({})".format(input_length, target_length)
+            # per-entry resolution: targets and daily inputs are aligned with
+            # the target axis (factor 1), sub-daily inputs use their own factor
+            self.entry_factor = []
+            self.entry_is_daily = []
+            for e, entry in enumerate(self.all_lengths):
+                entry_total = sum(entry)
+                if e >= n_inputs or entry_total == target_length:
+                    self.entry_factor.append(1)
+                    self.entry_is_daily.append(True)
+                else:
+                    assert entry_total % target_length == 0, (
+                        "The input time axis ({}) must be a multiple of the "
+                        "target time axis ({})".format(entry_total, target_length)
+                    )
+                    self.entry_factor.append(entry_total // target_length)
+                    self.entry_is_daily.append(False)
+            self.time_factor = max(self.entry_factor)
+            assert 0 <= self.target_time_offset < self.time_factor, (
+                "--target-time-offset ({}) must be in [0, {})".format(
+                    self.target_time_offset, self.time_factor
+                )
             )
-            self.time_factor = input_length // target_length
-            for e in range(n_inputs):
-                self.sample_lengths[e] = [
-                    entry // self.time_factor for entry in self.all_lengths[e]
-                ]
-                self.mask_sample_lengths[e] = [
-                    entry // self.time_factor for entry in self.mask_all_lengths[e]
-                ]
+            for e in range(len(self.all_lengths)):
+                if self.entry_is_daily[e]:
+                    self.sample_lengths[e] = list(self.all_lengths[e])
+                    self.mask_sample_lengths[e] = list(self.mask_all_lengths[e])
+                else:
+                    self.sample_lengths[e] = [
+                        entry // self.entry_factor[e] for entry in self.all_lengths[e]
+                    ]
+                    self.mask_sample_lengths[e] = [
+                        entry // self.entry_factor[e] for entry in self.mask_all_lengths[e]
+                    ]
         qdm_input_file = getattr(cfg, "qdm_input_file", None)
         if qdm_input_file:
             from ..quantile_mapping import load_qdm
@@ -275,7 +300,6 @@ class NetCDFLoader(Dataset):
                         qdm.apply(self.data_types[i], np.asarray(a))
                         for a in self.img_data[i]
                     ]
-
         if getattr(cfg, "precip_log_transform", False):
             for i in range(len(self.img_data)):
                 if is_precip_data_type(self.data_types[i]):
@@ -312,7 +336,7 @@ class NetCDFLoader(Dataset):
         mask_sample=None,
     ):
         agg = self.target_aggregation != "none"
-        is_target = agg and ind_data >= len(self.data_types) - cfg.n_target_data
+        is_daily = agg and self.entry_is_daily[ind_data]
 
         # in aggregation mode samples are indexed in target (e.g. daily) space
         entry_lengths = self.all_lengths[ind_data] if agg else self.img_length
@@ -327,13 +351,15 @@ class NetCDFLoader(Dataset):
                 ds_index += 1
         index -= current_index
 
-        if agg and is_target:
-            # the aggregated target is a single (daily) step, repeated over the window
+        if agg and is_daily:
+            # the aggregated target / daily inputs are single (daily) steps,
+            # repeated over the window
             center = index
             img_indices = np.full(self.n_time_steps, index)
         else:
-            # inputs use a sub-daily window around the sample's center step
-            center = index * self.time_factor if agg else index
+            # sub-daily inputs use a window around the sample's center step
+            # (day start shifted by --target-time-offset)
+            center = index * self.entry_factor[ind_data] + self.target_time_offset if agg else index
             img_indices = np.array(
                 list(range(center - self.time_steps[0], center + self.time_steps[1] + 1))
             )
@@ -356,10 +382,10 @@ class NetCDFLoader(Dataset):
                         current_index += mask_search[f]
                         mask_ds_index += 1
                 mask_index = mask_sample - current_index
-                if is_target:
+                if is_daily:
                     mask_indices = np.full(self.n_time_steps, mask_index)
                 else:
-                    mask_center = mask_index * self.time_factor
+                    mask_center = mask_index * self.entry_factor[ind_data] + self.target_time_offset
                     mask_indices = np.array(
                         list(
                             range(
