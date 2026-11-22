@@ -34,6 +34,11 @@ other = "remapcon_land"
 other_sfx = f"_{other}" if other else ""
 res = "2deg"
 res_sfx = f"_{res}" if other else ""
+
+# sub-daily (e.g. 3-hourly) input resolution for --target-aggregation runs;
+# the sub-daily template keys (input_3h, mask_3h, ...) are derived from it
+subdaily_res = "3h"
+subdaily_sfx = f"_{subdaily_res}"
 descriptor = "_lowres_values_filled_highres_grid"    # "" = no suffix in file/JSON names
 
 # year of the single static files, e.g. orography/lsm stored as ..._2005.nc
@@ -87,7 +92,7 @@ CONFIGS = {
         "input_vars": ["tp", "t2m", "relative_humidity", "surface_pressure", "wind_speed", "wind_direction"],
         "static_vars": ["orography"],
         "target": "tp",
-        "input_template": "input_3h",
+        "input_template": f"input_{subdaily_res}",
         "daily_input_vars": ["tp"],   # tp exists only daily -> daily input file
         "model": {"lr": 5e-5,
                   "conv-factor": 512,
@@ -104,7 +109,7 @@ CONFIGS = {
         "input_vars": ["relative_humidity", "t2m", "surface_pressure", "wind_speed", "wind_direction"],
         "static_vars": ["orography"],
         "target": "relative_humidity",
-        "input_template": "input_3h",
+        "input_template": f"input_{subdaily_res}",
         "model": {"loss_criterion": 12,         # gamma on the valid region: pure downscaling
                   "gamma_data_types": "2r",
                   "min_bounds": [0], "max_bounds": [100],   # physical range of 2r
@@ -252,43 +257,54 @@ force_rewrite = False
 # =========================================================
 NC_TPL = {
     "input":       "{data_root}/{var}/cerra_dm_{var}_{year}{reg_sfx}{descriptor}{res_sfx}.nc",
-    # 3-hourly (sub-daily) input files for --target-aggregation experiments;
-    # adjust the names to the actual 3-hourly CERRA files
-    "input_3h": "{data_root}/{var}/cerra_dm_{var}_{year}{reg_sfx}{descriptor}{res_sfx}_3h.nc",
     "target":      "{data_root}/{var}/cerra_dm_{var}_{year}{other_sfx}{reg_sfx}.nc",
     "static":      "{data_root}/{var}/cerra_dm_{var}_{static_year}{other_sfx}{reg_sfx}.nc",
     "mask":        "{mask_folder}/cerra_dm_{var}_{year}{reg_sfx}_filled_mask.nc",
-    # 3-hourly masks matching the 3-hourly inputs (same time axis, required
-    # by --target-aggregation)
-    "mask_3h": "{mask_folder}/cerra_dm_{var}_{year}{reg_sfx}_filled_mask_3h.nc",
     "mask_static": "{mask_folder}/cerra_dm_{var}_{static_year}{reg_sfx}_filled_mask.nc",
     # same layout as "mask", but listed separately so the test-split masks
     # can point at a different folder if ever needed:
     # swap {mask_folder} -> {mask_folder_test} here to use the test masks
     "mask_test":   "{mask_folder}/cerra_dm_{var}_{year}{reg_sfx}_filled_mask.nc",
-    "mask_test_3h": "{mask_folder}/cerra_dm_{var}_{year}{reg_sfx}_filled_mask_3h.nc",
     "steady_mask": "{mask_folder}/cerra_dm_{var}_{steady_mask_year}{reg_sfx}_steady_mask.nc",
 }
 
 JSON_TPL = {
     "input":       "cerra_{var}{reg_sfx}{descriptor}_{split}.json",
-    "input_3h": "cerra_{var}{reg_sfx}{descriptor}_{split}_3h.json",
     "static":      "cerra_{var}{reg_sfx}_{split}.json",
     "target":      "cerra_{var}{reg_sfx}{other_sfx}_target_{split}.json",
     "mask":        "cerra_{var}{reg_sfx}{other_sfx}_mask.json",
-    "mask_3h": "cerra_{var}{reg_sfx}{other_sfx}_mask_3h.json",
     "mask_test":   "cerra_{var}{reg_sfx}{other_sfx}_mask_test.json",
-    "mask_test_3h": "cerra_{var}{reg_sfx}{other_sfx}_mask_test_3h.json",
     "steady_mask": "cerra_{selected}_{reg_sfx}{other_sfx}_steady_mask.json",
 }
 
 
+# sub-daily input/mask templates for the chosen resolution (e.g. _3h files);
+# adjust the patterns to the actual sub-daily CERRA file names
+NC_TPL[f"input_{subdaily_res}"] = (
+    "{data_root}/{var}/cerra_dm_{var}_{year}{reg_sfx}{descriptor}{res_sfx}"
+    + subdaily_sfx + ".nc"
+)
+NC_TPL[f"mask_{subdaily_res}"] = (
+    "{mask_folder}/cerra_dm_{var}_{year}{reg_sfx}_filled_mask" + subdaily_sfx + ".nc"
+)
+NC_TPL[f"mask_test_{subdaily_res}"] = NC_TPL[f"mask_{subdaily_res}"]
+JSON_TPL[f"input_{subdaily_res}"] = (
+    "cerra_{var}{reg_sfx}{descriptor}_{split}" + subdaily_sfx + ".json"
+)
+JSON_TPL[f"mask_{subdaily_res}"] = (
+    "cerra_{var}{reg_sfx}{other_sfx}_mask" + subdaily_sfx + ".json"
+)
+JSON_TPL[f"mask_test_{subdaily_res}"] = (
+    "cerra_{var}{reg_sfx}{other_sfx}_mask_test" + subdaily_sfx + ".json"
+)
+
+
 def _tpl_pair(input_tpl):
     """input template key -> (mask template key, mask-test template key)."""
-    return {
-        "input": ("mask", "mask_test"),
-        "input_3h": ("mask_3h", "mask_test_3h"),
-    }[input_tpl]
+    if input_tpl == "input":
+        return "mask", "mask_test"
+    res = input_tpl[len("input_"):]
+    return f"mask_{res}", f"mask_test_{res}"
 
 
 def _input_tpl_for(var, input_tpl, daily_input_vars):
