@@ -45,6 +45,7 @@ declare -A VAR_FILE_MAP=(
     ["surface_pressure"]="sp"
     ["wind_speed"]="10si"
     ["wind_direction"]="10wdir"
+    ["tciwv"]="tciwv"
 )
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"  # folder of this script

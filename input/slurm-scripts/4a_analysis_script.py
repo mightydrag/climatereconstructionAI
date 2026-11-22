@@ -83,6 +83,7 @@ VAR_FILE_DEFAULTS = {
     "surface_pressure":  "sp",
     "wind_speed":        "10si",
     "wind_direction":    "10wdir",
+    "tciwv":             "tciwv"
 }
 # generic fallback candidates if the mapping misses
 VAR_CANDIDATES = ["2t", "t2m", "tas", "air_temperature"]

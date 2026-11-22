@@ -131,6 +131,14 @@ def set_lambdas():
         lambda_dict["tv"] = 0.1
         lambda_dict["prc"] = 0.05
         lambda_dict["style"] = 120.0
+    
+    elif loss_criterion == 12:
+        # gamma loss on the valid region (e.g. wind speed, humidity)
+        lambda_dict["valid"] = 1.0
+        lambda_dict["gamma_valid"] = 6.0
+        lambda_dict["tv"] = 0.1
+        lambda_dict["prc"] = 0.05
+        lambda_dict["style"] = 120.0
 
     if lambda_loss is not None:
         lambda_dict.update(lambda_loss)

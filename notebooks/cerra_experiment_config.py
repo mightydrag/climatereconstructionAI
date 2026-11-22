@@ -2,9 +2,13 @@
 """CERRA experiment workflow -- script version of cerra_experiment_config.ipynb.
 
 Edit the SETTINGS block below (paths, region, splits, CONFIGS, MODEL_DEFAULTS,
-selected, force_rewrite), then run:
+force_rewrite), then run:
 
-    python3 cerra_experiment_config.py
+    python3 cerra_experiment_config.py [CONFIG_KEY]
+
+The config to generate defaults to the `selected` value in the settings block and
+can be overridden by a positional argument (a CONFIGS key, or "all") or the
+CERRA_SELECTED env var -- e.g. python3 cerra_experiment_config.py tp_tciwv-all_var
 
 The script
   1. validates that every required .nc file exists (writes nothing if any is
@@ -125,8 +129,8 @@ CONFIGS = {
         "static_vars": ["orography"],
         "target": "tp",
         "model": {"lr": 5e-5,
-                  "conv-factor": 512,
-                  "precip-log-transform": True,
+                  "conv_factor": 512,
+                  "precip_log_transform": True,
                   "loss_criterion": 8, },
     },
     "tp_tciwv-all_var-atten": {
@@ -134,8 +138,8 @@ CONFIGS = {
         "static_vars": ["orography"],
         "target": "tp",
         "model": {"lr": 5e-5,
-                  "conv-factor": 512,
-                  "precip-log-transform": True,
+                  "conv_factor": 512,
+                  "precip_log_transform": True,
                   "loss_criterion": 8, 
                   "attention":True},
     },
@@ -144,8 +148,8 @@ CONFIGS = {
         "static_vars": ["orography"],
         "target": "tp",
         "model": {"lr": 5e-5,
-            "conv-factor": 512,
-            "precip-log-transform": True,
+            "conv_factor": 512,
+            "precip_log_transform": True,
             "loss_criterion": 8, },
     },
     "tp-all_var-atten": {
@@ -153,8 +157,8 @@ CONFIGS = {
         "static_vars": ["orography"],
         "target": "tp",
         "model": {"lr": 5e-5,
-            "conv-factor": 512,
-            "precip-log-transform": True,
+            "conv_factor": 512,
+            "precip_log_transform": True,
             "loss_criterion": 8, 
             "attention":True},
     },
@@ -216,20 +220,35 @@ MODEL_DEFAULTS = {
     "conv_factor": 128,
     "batch_size": 64,
     "loss_criterion": 7,
+    "lambda_loss": "style,10.0",
     "save_model_interval": 2500,
     "log_interval": 500,
     "eval_timesteps": "0,100",
     "max_iter": 100000,
     "attention": False,
-    "precip-log-transform": False,
+    "precip_log_transform": False,
     "model_names": "best",      # eval only: which checkpoint(s) to evaluate
 }
 
 # ---- select which config to create the files for ----
-# one key of CONFIGS -> only that config; None -> ALL configs
-selected = "tp-all_var-atten"
-if not selected in CONFIGS.keys():
-    raise ValueError("WRONG CONFIG SELECTED")
+# one key of CONFIGS -> only that config; "all"/None -> ALL configs
+# default below; override WITHOUT editing when running the .py script:
+#   python3 cerra_experiment_config.py tp_tciwv-all_var     # positional arg
+#   CERRA_SELECTED=tp_tciwv-all_var python3 ...              # env var
+# (in Jupyter, sys.argv holds kernel flags starting with '-', so the CLI
+#  override is ignored there and the default/env var is used)
+import os
+import sys
+
+selected = "t2m-single"
+if len(sys.argv) > 1 and not sys.argv[1].startswith("-"):
+    selected = None if sys.argv[1] in ("all", "None") else sys.argv[1]
+_env_sel = os.environ.get("CERRA_SELECTED")
+if _env_sel:
+    selected = None if _env_sel in ("all", "None") else _env_sel
+if selected is not None and selected not in CONFIGS.keys():
+    raise ValueError(f"WRONG CONFIG SELECTED: '{selected}' -- valid keys: {', '.join(CONFIGS.keys())}")
+print(f"selected config: {selected}")
 # ---- where the generated train/eval config files are written ----
 # the file-name prefixes match input/slurm-scripts/submit-train-cerra.sh and
 # submit-eval-cerra.sh, which derive the slurm job name from the file name
@@ -251,9 +270,10 @@ force_rewrite = False
 #     Placeholders usable in NC_TPL / JSON_TPL (filled via BASE):
 #       {data_root} {mask_folder} {mask_folder_test} {var} {year}
 #       {reg} {reg_sfx} {other_sfx} {res_sfx} {descriptor} {static_year}
-#       {steady_mask_year} {selected} {split}
+#       {steady_mask_year} {key} {split}
 #     ANY of these may be used in ANY NC_TPL / JSON_TPL entry --
-#     BASE supplies them all to every .format() call.
+#     BASE supplies them all to every .format() call ({key} = the CONFIGS
+#     key of the current experiment is passed per call, not via BASE).
 # =========================================================
 NC_TPL = {
     "input":       "{data_root}/{var}/cerra_dm_{var}_{year}{reg_sfx}{descriptor}{res_sfx}.nc",
@@ -274,7 +294,7 @@ JSON_TPL = {
     "target":      "cerra_{var}{reg_sfx}{other_sfx}_target_{split}.json",
     "mask":        "cerra_{var}{reg_sfx}{other_sfx}_mask.json",
     "mask_test":   "cerra_{var}{reg_sfx}{other_sfx}_mask_test.json",
-    "steady_mask": "cerra_{selected}_{reg_sfx}{other_sfx}_steady_mask.json",
+    "steady_mask": "cerra_{key}_{reg_sfx}{other_sfx}_steady_mask.json",
 }
 
 
@@ -530,7 +550,7 @@ def write_config(target_var, input_vars, static_vars, input_tpl="input",
     # ---- steady mask (single file for the target channels, same folder) ----
     path = os.path.join(ml_path, "data", "masks", target_var)
     os.makedirs(path, exist_ok=True)
-    name_steady = JSON_TPL["steady_mask"].format(**BASE)
+    name_steady = JSON_TPL["steady_mask"].format(**BASE, key=key)
     with open(os.path.join(path, name_steady), "w") as f:
         json.dump([steady_mask_file(target_var)], f, indent=2)
     print(f"steady mask: 1 file -> {path}")
@@ -694,7 +714,7 @@ def experiment_names(key, cfg):
     h = experiment_fingerprint(key, cfg)
     config_name = target_var
     run_name = (
-        f"cerra-{selected}-{reg}-{res}"
+        f"cerra-{key}-{reg}-{res}"
         f"-el{el_tag}-po{po_tag}-cf{m['conv_factor']}"
         f"-l{m['loss_criterion']}-{up_tag}-b{m['batch_size']}-{h}"
     )
@@ -826,7 +846,7 @@ for key, entry in written.items():
     seen_names[names] = key
 
     config_name, run_name = names
-    file_tag = f"{run_name.removeprefix('cerra-')}"
+    file_tag = run_name[len("cerra-"):] if run_name.startswith("cerra-") else run_name
     train_file = f"{train_prefix}{file_tag}.txt"
     eval_file = f"{eval_prefix}{file_tag}.txt"
     train_path = os.path.join(config_out_dir, train_file)
