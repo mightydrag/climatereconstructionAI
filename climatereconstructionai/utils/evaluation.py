@@ -130,6 +130,67 @@ def create_snapshot_image(model, dataset, filename, data_stats=None):
     plt.clf()
     plt.close("all")
 
+    create_rmse_map(data_dict, filename + "_rmse", data_stats)
+
+
+def create_rmse_map(data_dict, filename, data_stats=None):
+    output = data_dict["output"][:, cfg.recurrent_steps]
+    gt = data_dict["gt"][:, cfg.recurrent_steps]
+
+    if cfg.normalize_data and data_stats is not None:
+        if cfg.n_target_data == 0:
+            start_idx = 0
+            n_out_channels = cfg.out_channels
+        else:
+            start_idx = len(data_stats["mean"]) - cfg.n_target_data
+            n_out_channels = cfg.n_target_data
+    else:
+        start_idx = 0
+        n_out_channels = min(output.shape[1], gt.shape[1])
+
+    n_channels = min(n_out_channels, output.shape[1], gt.shape[1] - start_idx)
+    gt_sel = gt[:, start_idx : start_idx + n_channels].clone()
+    out_sel = output[:, :n_channels]
+
+    if cfg.normalize_data and data_stats is not None:
+        for c in range(n_channels):
+            mean_val = data_stats["mean"][start_idx + c]
+            std_val = data_stats["std"][start_idx + c]
+            gt_sel[:, c, :, :] = renormalize(gt_sel[:, c, :, :], mean_val, std_val)
+
+    rmse = torch.sqrt(torch.mean((out_sel - gt_sel) ** 2, dim=0))
+
+    fig, axes = plt.subplots(
+        nrows=n_channels, ncols=1, figsize=(6, 5 * n_channels), squeeze=False
+    )
+    fig.patch.set_facecolor("black")
+
+    for c in range(n_channels):
+        values = rmse[c].cpu().numpy()
+        vmin = 0.0
+        vmax = np.quantile(values, 0.98)
+
+        axes[c, 0].text(
+            -0.8,
+            0.5,
+            "rmse "
+            + str(c)
+            + "\n"
+            + "{:.3e}".format(vmax),
+            size=24,
+            va="center",
+            transform=axes[c, 0].transAxes,
+            color="white",
+        )
+        axes[c, 0].axis("off")
+        cp = axes[c, 0].imshow(values, vmin=vmin, vmax=vmax, cmap="YlOrRd")
+        plt.colorbar(cp, ax=axes[c, 0])
+
+    plt.subplots_adjust(wspace=0.012, hspace=0.012)
+    plt.savefig(filename + ".jpg", bbox_inches="tight", pad_inches=0)
+    plt.clf()
+    plt.close("all")
+
 
 def get_xr_dss(xr_dss_paths, data_types):
     # get xrdss

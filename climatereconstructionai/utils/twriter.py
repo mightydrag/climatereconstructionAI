@@ -83,6 +83,10 @@ class writer():
         fig = visualization.create_map(mask, steady_mask, output, gt, num_samples=3)
         self.add_figure(fig, iter_index, name_tag=f'map/{setname}/values')
 
+    def add_rmse_maps(self, mask, steady_mask, output, gt, iter_index, setname):
+        fig = visualization.create_rmse_map(mask, steady_mask, output, gt, num_samples=3)
+        self.add_figure(fig, iter_index, name_tag=f'map/{setname}/rmse')
+
     def add_distribution(self, values, iter_index, name_tag=None):
         if name_tag is None:
             name_tag = self.suffix
@@ -108,6 +112,9 @@ class writer():
         if "error" in cfg.tensor_plots:
             self.add_error_maps(mask, steady_mask, output, gt, iter_index, setname)
             self.add_maps(mask, steady_mask, output, gt, iter_index, setname)
+
+        if "rmse" in cfg.tensor_plots:
+            self.add_rmse_maps(mask, steady_mask, output, gt, iter_index, setname)
 
     def close(self):
         self.writer.close()
