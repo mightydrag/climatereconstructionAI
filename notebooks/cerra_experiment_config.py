@@ -715,18 +715,31 @@ def header_block(config_name, run_name):
     ]
 
 
-def model_block(m):
+def model_block(m, for_eval=False):
     """Pass every model param through as a --flag line.
 
     key -> "--<key with dashes> value"; True booleans become the bare flag
     (store_true), False omits the line; lists are comma-joined; dicts are
     written as key,value pairs (e.g. lambda_loss). Anything set in
     MODEL_DEFAULTS or a per-config "model" dict ends up in the config files.
+
+    encoding_layers / pooling_layers are special: training only reads the
+    first number (primary encoder/decoder depth), so the train config gets a
+    single value; evaluation with attention fusion also reads the second
+    number, so the eval config gets "n,n" (or "n,m" if two values are given).
     """
     lines = []
     for key, val in m.items():
         flag = "--" + key.replace("_", "-")
-        if isinstance(val, bool):
+        if key in ("encoding_layers", "pooling_layers"):
+            nums = val if isinstance(val, (list, tuple)) else str(val).split(",")
+            if for_eval:
+                if len(nums) == 1:
+                    nums = nums * 2
+                lines.append(f"{flag} {','.join(str(v) for v in nums)}")
+            else:
+                lines.append(f"{flag} {nums[0]}")
+        elif isinstance(val, bool):
             if val:
                 lines.append(flag)
         elif isinstance(val, (list, tuple)):
@@ -794,7 +807,7 @@ def render_eval_config(key, entry, names):
         f"--end-year {test_end}",
         "",
     ]
-    lines += model_block(m)
+    lines += model_block(m, for_eval=True)
     return "\n".join(lines) + "\n"
 
 
