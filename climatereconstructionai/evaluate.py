@@ -1,4 +1,5 @@
 import os
+import sys
 
 from .model.net import CRAINet
 from .utils.evaluation import (
@@ -25,6 +26,123 @@ def store_encoding(ds):
     global encoding
     encoding = ds["time"].encoding
     return ds
+
+def find_args_file(arg_file):
+    if arg_file:
+        return arg_file
+    argv = sys.argv[1:]
+    for i, token in enumerate(argv):
+        if token in ("-f", "--load-from-file") and i + 1 < len(argv):
+            return argv[i + 1]
+        if token.startswith("--load-from-file="):
+            return token.split("=", 1)[1]
+    return None
+
+
+def resolve_4a_reference_files():
+    from .evaluate_4a import read_data_list
+
+    n_target = cfg.n_target_data if cfg.n_target_data > 0 else 1
+    files = []
+    for entry in cfg.data_names[-n_target:]:
+        path = entry if os.path.isabs(entry) else os.path.join(cfg.data_root_dir, entry)
+        if os.path.isfile(path) and path.endswith((".nc", ".h5")):
+            files.append(path)
+        else:
+            for f in read_data_list(path):
+                if not os.path.isfile(f) and not os.path.isabs(f):
+                    f = os.path.join(cfg.data_root_dir, f)
+                files.append(f)
+    return files
+
+
+def run_4a_stats(arg_file=None):
+    from . import evaluate_4a
+
+    out_dir = getattr(cfg, "4a_output_dir", None) or os.path.join(
+        cfg.evaluation_dirs[0], "4a-stats"
+    )
+    var = cfg.config_name if cfg.config_name not in (None, "None") else cfg.data_types[-1]
+    path_nn = os.path.join(cfg.evaluation_dirs[0], "data")
+
+    ref_files = resolve_4a_reference_files()
+    if not ref_files:
+        raise ValueError(
+            "--run-4a-stats: no reference files could be resolved from --data-names"
+        )
+
+    years = {}
+    for f in ref_files:
+        y = evaluate_4a.extract_year(f)
+        if y is not None:
+            years[y] = f
+    has_real_years = bool(years)
+    if not has_real_years:
+        years = {0: ref_files[-1]}
+    ref_file0 = next(iter(years.values()))
+    ref_pattern = os.path.basename(ref_file0)
+    path_original = os.path.dirname(ref_file0)
+    if has_real_years:
+        year0 = evaluate_4a.extract_year(ref_file0)
+        ref_pattern = ref_pattern.replace(str(year0), "{year}", 1)
+
+    eval_name = cfg.eval_names[0]
+    nn_pattern = eval_name + "_output.nc"
+    year_nn = evaluate_4a.extract_year(eval_name)
+    if year_nn is not None:
+        nn_pattern = eval_name.replace(str(year_nn), "{year}", 1) + "_output.nc"
+
+    years_avail = sorted(
+        y
+        for y in years
+        if os.path.isfile(str(evaluate_4a.pattern_path(path_nn, nn_pattern, var, y)))
+    )
+    if not years_avail:
+        print(
+            f"4a stats: no NN output files matching '{nn_pattern}' found in "
+            f"{path_nn} -> skipping"
+        )
+        return
+
+    args_file = find_args_file(arg_file)
+    if has_real_years and args_file and os.path.isfile(args_file):
+        end_year = evaluate_4a.parse_args_file(args_file).get("end-year")
+        if end_year not in (None, True) and years_avail[-1] < int(end_year):
+            print(
+                f"4a stats: NN outputs available only up to {years_avail[-1]}, "
+                f"but the args file sets --end-year {end_year} -> skipping "
+                "(rerun after the remaining years are evaluated)"
+            )
+            return
+
+    mask_file = None
+    if cfg.steady_masks:
+        entry = cfg.steady_masks[0]
+        mask_path = entry if os.path.isabs(entry) else os.path.join(cfg.mask_dir, entry)
+        if os.path.isfile(mask_path) and mask_path.endswith((".nc", ".h5")):
+            mask_file = mask_path
+        elif os.path.isfile(mask_path):
+            mask_list = evaluate_4a.read_data_list(mask_path)
+            mask_file = mask_list[0] if mask_list else None
+
+    argv = [
+        "--path-original", path_original,
+        "--path-nn", path_nn,
+        "--var", var,
+        "--year-min", str(years_avail[0]),
+        "--year-max", str(years_avail[-1]),
+        "--file-pattern-nn", nn_pattern,
+        "--file-pattern-ref", ref_pattern,
+        "--output-dir", out_dir,
+    ]
+    if mask_file:
+        argv += ["--mask-file", mask_file]
+    if getattr(cfg, "4a_deseasonalize", False):
+        argv.append("--deseasonalize")
+
+    print(f"Running 4a statistics analysis (output dir: {out_dir})")
+    evaluate_4a.main(argv)
+
 
 def resolve_model_name(model_dir, name):
     if name in ("best", "latest", "final") and not os.path.exists(
@@ -215,6 +333,9 @@ def evaluate(arg_file=None, prog_func=None):
 
     if cfg.hindcast_eval == True:
         evaluate_pp_skill()
+
+    if cfg.run_4a_stats:
+        run_4a_stats(arg_file)
 
 
 if __name__ == "__main__":

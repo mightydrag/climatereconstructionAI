@@ -261,7 +261,7 @@ usage: crai-evaluate [-h] [--data-root-dir DATA_ROOT_DIR] [--mask-dir MASK_DIR] 
                      [--loop-random-seed LOOP_RANDOM_SEED] [--cuda-random-seed CUDA_RANDOM_SEED] [--deterministic] [--attention] [--channel-reduction-rate CHANNEL_REDUCTION_RATE] [--disable-skip-layers]
                      [--disable-first-bn] [--masked-bn] [--lazy-load] [--global-padding] [--gnn-layers GNN_LAYERS] [--gnn-neighbors GNN_NEIGHBORS] [--target-aggregation {none,sum,mean}] [--target-time-offset TARGET_TIME_OFFSET] [--time-pooling {none,mean,last,sum,attention}] [--normalize-data] [--n-filters N_FILTERS] [--out-channels OUT_CHANNELS] [--dataset-name DATASET_NAME]
                      [--min-bounds MIN_BOUNDS] [--max-bounds MAX_BOUNDS] [--profile] [--model-dir MODEL_DIR] [--model-names MODEL_NAMES] [--evaluation-dirs EVALUATION_DIRS] [--eval-names EVAL_NAMES]
-                     [--use-train-stats] [--create-graph] [--plot-results PLOT_RESULTS] [--partitions PARTITIONS] [--maxmem MAXMEM] [--split-outputs] [-f LOAD_FROM_FILE]
+                     [--use-train-stats] [--create-graph] [--plot-results PLOT_RESULTS] [--partitions PARTITIONS] [--maxmem MAXMEM] [--split-outputs] [--run-4a-stats] [--4a-output-dir 4A_OUTPUT_DIR] [--4a-deseasonalize] [-f LOAD_FROM_FILE]
 
 options:
   -h, --help            show this help message and exit
@@ -340,9 +340,15 @@ options:
                         Split the climate dataset into several partitions along the time coordinate
   --maxmem MAXMEM       Maximum available memory in MB (overwrite partitions parameter)
   --split-outputs       Do not merge the outputs when using multiple models and/or partitions
+  --run-4a-stats        After the evaluation outputs are written, run the 4a statistics analysis (climatereconstructionai.evaluate_4a) of the NN outputs against the reference (target) data, producing per-grid-cell maps, a stats file and figures
+  --4a-output-dir 4A_OUTPUT_DIR
+                        Output directory for the 4a statistics (maps, stats file, figures); default: <evaluation-dirs>/<config-name>/<run-name>/4a-stats
+  --4a-deseasonalize    Pass --deseasonalize to the 4a statistics analysis (remove the per-cell day-of-year climatology before computing EV/correlation)
   -f LOAD_FROM_FILE, --load-from-file LOAD_FROM_FILE
                         Load all the arguments from a text file
 ```
+
+The 4a statistics analysis (`climatereconstructionai/evaluate_4a.py`, formerly only available as the standalone `input/slurm-scripts/4a_analysis_script.py`) can also be run directly via `crai-evaluate-4a`. With `--run-4a-stats`, `crai-evaluate` runs it automatically after the model outputs are written: it compares the written NN outputs (`<eval-names>_output.nc` per year) against the reference target files (the last `--n-target-data` entries of `--data-names`) and writes per-grid-cell maps (`*_maps.nc`), a stats file (`*_stats.txt`) and figures to `--4a-output-dir` (default `<evaluation-dirs>/<config-name>/<run-name>/4a-stats`). When the arguments file defines `--end-year` and per-year evaluation is still running, the 4a run is skipped until the last year is available.
 
 ## Distribution-aware losses, GNN and temporal architectures
 
