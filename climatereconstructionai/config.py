@@ -813,6 +813,27 @@ def set_evaluate_args(arg_file=None, prog_func=None):
         help="Do not merge the outputs when using multiple models and/or partitions",
     )
     arg_parser.add_argument(
+        "--run-4a-stats",
+        action="store_true",
+        help="After the evaluation outputs are written, run the 4a statistics "
+        "analysis (climatereconstructionai.evaluate_4a) of the NN outputs "
+        "against the reference (target) data, producing per-grid-cell maps, "
+        "a stats file and figures",
+    )
+    arg_parser.add_argument(
+        "--4a-output-dir",
+        type=str,
+        default=None,
+        help="Output directory for the 4a statistics (maps, stats file, "
+        "figures); default: <evaluation-dirs>/<config-name>/<run-name>/4a-stats",
+    )
+    arg_parser.add_argument(
+        "--4a-deseasonalize",
+        action="store_true",
+        help="Pass --deseasonalize to the 4a statistics analysis (remove the "
+        "per-cell day-of-year climatology before computing EV/correlation)",
+    )
+    arg_parser.add_argument(
         "-f",
         "--load-from-file",
         type=str,
