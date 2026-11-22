@@ -118,7 +118,7 @@ usage: crai-train [-h] [--data-root-dir DATA_ROOT_DIR] [--mask-dir MASK_DIR] [--
                   [--n-target-data N_TARGET_DATA] [--device DEVICE] [--shuffle-masks] [--channel-steps CHANNEL_STEPS] [--lstm-steps LSTM_STEPS] [--gru-steps GRU_STEPS]
                   [--encoding-layers ENCODING_LAYERS] [--pooling-layers POOLING_LAYERS] [--conv-factor CONV_FACTOR] [--weights WEIGHTS] [--steady-masks STEADY_MASKS]
                   [--loop-random-seed LOOP_RANDOM_SEED] [--cuda-random-seed CUDA_RANDOM_SEED] [--deterministic] [--attention] [--channel-reduction-rate CHANNEL_REDUCTION_RATE] [--disable-skip-layers]
-                  [--disable-first-bn] [--masked-bn] [--lazy-load] [--global-padding] [--gnn-layers GNN_LAYERS] [--gnn-neighbors GNN_NEIGHBORS] [--target-aggregation {none,sum,mean}] [--normalize-data] [--n-filters N_FILTERS] [--out-channels OUT_CHANNELS] [--dataset-name DATASET_NAME]
+                  [--disable-first-bn] [--masked-bn] [--lazy-load] [--global-padding] [--gnn-layers GNN_LAYERS] [--gnn-neighbors GNN_NEIGHBORS] [--target-aggregation {none,sum,mean}] [--target-time-offset TARGET_TIME_OFFSET] [--time-pooling {none,mean,last,sum,attention}] [--normalize-data] [--n-filters N_FILTERS] [--out-channels OUT_CHANNELS] [--dataset-name DATASET_NAME]
                   [--min-bounds MIN_BOUNDS] [--max-bounds MAX_BOUNDS] [--profile] [--val-names VAL_NAMES] [--snapshot-dir SNAPSHOT_DIR] [--resume-iter RESUME_ITER] [--batch-size BATCH_SIZE]
                   [--n-threads N_THREADS] [--multi-gpus] [--finetune] [--lr LR] [--lr-finetune LR_FINETUNE] [--max-iter MAX_ITER] [--log-interval LOG_INTERVAL]
                   [--lr-scheduler-patience LR_SCHEDULER_PATIENCE] [--save-model-interval SAVE_MODEL_INTERVAL] [--n-final-models N_FINAL_MODELS] [--final-models-interval FINAL_MODELS_INTERVAL]
@@ -176,6 +176,10 @@ options:
                         Number of grid neighbours per node used for message passing in the GNN layers (4 or 8)
   --target-aggregation {none,sum,mean}
                         Aggregate the model output over the input time window before the loss/evaluation ('sum' or 'mean'), for sub-daily inputs with an aggregated (e.g. daily) target. Requires --n-target-data > 0 and recurrent steps (--lstm-steps/--gru-steps). Default 'none' keeps the center-timestep behavior
+  --target-time-offset TARGET_TIME_OFFSET
+                        Offset (in input time steps) of each aggregated target sample within the input files, used with --target-aggregation. Example: 2 for 3-hourly inputs starting at 00 UTC when the daily target is a 06UTC-06UTC accumulation
+  --time-pooling {none,mean,last,sum,attention}
+                        Collapse the input time window to a single (aggregated, e.g. daily) output field inside the model, instead of producing one output per input step. 'attention' learns per-step weights. Requires --target-aggregation and --lstm-steps/--gru-steps. Default 'none'
   --precip-log-transform Apply log1p to precipitation data types before normalization (reduces skewness of the precipitation distribution)
   --precip-log-names PRECIP_LOG_NAMES
                           Comma separated data type names treated as precipitation for --precip-log-transform
@@ -255,7 +259,7 @@ usage: crai-evaluate [-h] [--data-root-dir DATA_ROOT_DIR] [--mask-dir MASK_DIR] 
                      [--n-target-data N_TARGET_DATA] [--device DEVICE] [--shuffle-masks] [--channel-steps CHANNEL_STEPS] [--lstm-steps LSTM_STEPS] [--gru-steps GRU_STEPS]
                      [--encoding-layers ENCODING_LAYERS] [--pooling-layers POOLING_LAYERS] [--conv-factor CONV_FACTOR] [--weights WEIGHTS] [--steady-masks STEADY_MASKS]
                      [--loop-random-seed LOOP_RANDOM_SEED] [--cuda-random-seed CUDA_RANDOM_SEED] [--deterministic] [--attention] [--channel-reduction-rate CHANNEL_REDUCTION_RATE] [--disable-skip-layers]
-                     [--disable-first-bn] [--masked-bn] [--lazy-load] [--global-padding] [--gnn-layers GNN_LAYERS] [--gnn-neighbors GNN_NEIGHBORS] [--target-aggregation {none,sum,mean}] [--normalize-data] [--n-filters N_FILTERS] [--out-channels OUT_CHANNELS] [--dataset-name DATASET_NAME]
+                     [--disable-first-bn] [--masked-bn] [--lazy-load] [--global-padding] [--gnn-layers GNN_LAYERS] [--gnn-neighbors GNN_NEIGHBORS] [--target-aggregation {none,sum,mean}] [--target-time-offset TARGET_TIME_OFFSET] [--time-pooling {none,mean,last,sum,attention}] [--normalize-data] [--n-filters N_FILTERS] [--out-channels OUT_CHANNELS] [--dataset-name DATASET_NAME]
                      [--min-bounds MIN_BOUNDS] [--max-bounds MAX_BOUNDS] [--profile] [--model-dir MODEL_DIR] [--model-names MODEL_NAMES] [--evaluation-dirs EVALUATION_DIRS] [--eval-names EVAL_NAMES]
                      [--use-train-stats] [--create-graph] [--plot-results PLOT_RESULTS] [--partitions PARTITIONS] [--maxmem MAXMEM] [--split-outputs] [-f LOAD_FROM_FILE]
 
@@ -348,13 +352,14 @@ Besides the reconstruction losses above, the training supports distribution-awar
 - `--loss-criterion 11`: **gamma** loss (negative log-likelihood of a gamma distribution) on the hole region, e.g. for wind speed or humidity.
 - Individual loss terms can also be combined freely via `--lambda-loss`, e.g. `--lambda-loss valid,1.0 bern_gamma,6.0 tv,0.1`. The available terms are `valid`, `hole`, `tv`, `tv_valid`, `precip`, `precip_valid`, `bern`, `bern_valid`, `gamma`, `gamma_valid`, `bern_gamma`, `bern_gamma_valid`, `prc` and `style`.
 - With `--gamma-data-types pr,hurs` the gamma/Bernoulli-Gamma terms are restricted to the output channels of the listed data types (useful for multi-variable setups where, e.g., only precipitation and humidity should be treated distributionally).
-- Combined with `--precip-log-transform`, a threshold of `0.0` in the transformed space separates dry from wet pixels.
+- `--bern-threshold` / `--gamma-threshold` are compared against the (normalized) target. Exception: for precipitation types with `--precip-log-transform` **and** `--normalize-data`, the threshold is interpreted in **raw units** and converted automatically via log1p + z-norm using the training statistics, so `--bern-threshold 0.0` means exactly "dry" (raw 0). Without `--normalize-data`, `0.0` in log1p space is already dry.
 
 For the architecture:
 
 - `--gnn-layers N` adds N graph convolution layers at the bottleneck of the U-Net, where each grid cell is a node and messages are passed between its `--gnn-neighbors` (4 or 8) nearest grid neighbours (circular in longitude with `--global-padding`). This provides GNN-style spatial message passing without additional dependencies.
 - Temporal dependence between time steps is modelled with the recurrent options `--lstm-steps past,future` (ConvLSTM) or `--gru-steps past,future` (TrajGRU), or with `--channel-steps past,future` for channeled memory; these can be combined with the GNN layers.
-- `--target-aggregation sum|mean` enables **sub-daily inputs with an aggregated (e.g. daily) target**: the last `--n-target-data` files may have a shorter time axis (e.g. daily) than the input files (e.g. 3-hourly); each sample is indexed in target space, inputs are loaded with the sub-daily window (`--lstm-steps past,future`) around that sample, and the model output is aggregated over the window (`sum` for precipitation totals, `mean` for the other variables) before the loss and at evaluation. Note: if the sub-daily inputs are only interpolations of daily data, they carry no additional information and this will not improve results.
+- `--target-aggregation sum|mean` enables **sub-daily inputs with an aggregated (e.g. daily) target**: the last `--n-target-data` files have the target (e.g. daily) time axis; input files may be sub-daily (3-hourly, hourly, ...) or daily themselves (e.g. daily precipitation as an additional predictor). Each sample is indexed in target space, sub-daily inputs are loaded with the window (`--lstm-steps past,future`) around `sample_index * steps_per_day + --target-time-offset` (e.g. `--lstm-steps 0,7` for 3-hourly inputs covering exactly one day; `--target-time-offset 2` if the daily target is a 06UTC-06UTC accumulation but the 3-hourly files start at 00 UTC), daily inputs are broadcast over the window, and the model output is aggregated over the window (`sum` for precipitation totals, `mean` for the other variables) before the loss and at evaluation. Pass the same flags to `crai-evaluate`. Note: if the sub-daily inputs are only interpolations of daily data, they carry no additional information and this will not improve results.
+- `--time-pooling mean|last|sum|attention` moves the temporal aggregation **inside the model**: the time dimension of every encoder level is collapsed (with learned per-step weights for `attention`) and the decoder produces a single daily field directly, so the network learns the 8-timestep → daily mapping itself instead of emitting one field per step that is only summed in the loss. Requires `--target-aggregation` and `--lstm-steps`/`--gru-steps`.
 
 Example (sub-daily precipitation infilling with a Bernoulli-Gamma loss, GNN bottleneck and temporal recurrence):
 

@@ -12,8 +12,10 @@ def sequence_to_batch(input):
 
 
 def batch_to_sequence(input, batch_size):
+    # infer the time dimension (it may be 1 after time pooling)
+    n_steps = input.shape[0] // batch_size
     return torch.reshape(input,
-                         (batch_size, cfg.n_recurrent_steps, input.shape[1], input.shape[2], input.shape[3]))
+                         (batch_size, n_steps, input.shape[1], input.shape[2], input.shape[3]))
 
 
 class EncoderBlock(nn.Module):

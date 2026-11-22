@@ -219,6 +219,14 @@ def global_args(parser, arg_file=None, prog_func=None):
 
     n_recurrent_steps = sum(time_steps) + 1
 
+    if time_pooling != "none":
+        assert target_aggregation != "none", (
+            "--time-pooling requires --target-aggregation (daily target indexing)"
+        )
+        assert lstm_steps or gru_steps, (
+            "--time-pooling requires --lstm-steps or --gru-steps"
+        )
+
     global n_channel_steps
     global gt_channels
 
@@ -430,6 +438,24 @@ def set_common_args():
         "aggregated (e.g. daily) target. Requires --n-target-data > 0 and "
         "recurrent steps (--lstm-steps/--gru-steps). Default 'none' keeps the "
         "center-timestep behavior",
+    )
+    arg_parser.add_argument(
+        "--time-pooling",
+        choices=("none", "mean", "last", "sum", "attention"),
+        default="none",
+        help="Collapse the input time window to a single (aggregated, e.g. "
+        "daily) output field inside the model, instead of producing one output "
+        "per input step. 'attention' learns per-step weights. Requires "
+        "--target-aggregation and --lstm-steps/--gru-steps. Default 'none'",
+    )
+    arg_parser.add_argument(
+        "--target-time-offset",
+        type=int,
+        default=0,
+        help="Offset (in input time steps) of each aggregated target sample "
+        "within the input files, used with --target-aggregation. Example: 2 for "
+        "3-hourly inputs starting at 00 UTC when the daily target is a "
+        "06UTC-06UTC accumulation",
     )
     arg_parser.add_argument(
         "--gnn-layers",
@@ -651,8 +677,11 @@ def set_train_args(arg_file=None):
         "--bern-threshold",
         type=float,
         default=0.0,
-        help="Threshold on the (normalized) target above which a pixel counts "
-        "as wet in the Bernoulli loss",
+        help="Threshold above which a pixel counts as wet in the Bernoulli/"
+        "Bernoulli-Gamma loss. On the (normalized) target; for precipitation "
+        "types with --precip-log-transform + --normalize-data the value is "
+        "interpreted in raw units and converted via log1p + z-norm (so 0.0 "
+        "means dry)",
     )
     arg_parser.add_argument(
         "--gamma-shape",
@@ -665,8 +694,10 @@ def set_train_args(arg_file=None):
         "--gamma-threshold",
         type=float,
         default=0.0,
-        help="Threshold on the (normalized) target above which a pixel contributes "
-        "to the gamma (amount) loss",
+        help="Threshold above which a pixel contributes to the gamma (amount) "
+        "loss. On the (normalized) target; for precipitation types with "
+        "--precip-log-transform + --normalize-data the value is interpreted in "
+        "raw units and converted via log1p + z-norm (so 0.0 means dry)",
     )
     arg_parser.add_argument(
         "--gamma-data-types",
