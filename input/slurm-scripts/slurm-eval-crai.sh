@@ -40,7 +40,7 @@ type2var() {
     case "$1" in
         2t) echo t2m ;; orog) echo orography ;; lsm) echo land_sea_mask ;;
         tp) echo tp ;; 2r) echo relative_humidity ;; sp) echo surface_pressure ;;
-        10si) echo wind_speed ;; 10wdir) echo wind_direction ;; *) return 1 ;;
+        10si) echo wind_speed ;; 10wdir) echo wind_direction ;; tciwv) echo tciwv ;;*) return 1 ;;
     esac
 }
 
