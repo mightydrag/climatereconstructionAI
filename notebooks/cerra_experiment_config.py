@@ -92,7 +92,7 @@ CONFIGS = {
         "model": {"lr": 5e-5,
                   "conv-factor": 512,
                   "precip-log-transform": True,
-                  "loss_criterion": 9,            # Bernoulli-Gamma on the daily sum
+                  "loss_criterion": 10,           # Bernoulli-Gamma on the valid region: pure downscaling, no holes to infill
                   "gamma_data_types": "tp",
                   "lstm_steps": [7, 0],           # trailing window: previous 8 steps
                   "target_aggregation": "sum",
@@ -105,7 +105,7 @@ CONFIGS = {
         "static_vars": ["orography"],
         "target": "relative_humidity",
         "input_template": "input_3h",
-        "model": {"loss_criterion": 11,         # gamma loss on the daily mean
+        "model": {"loss_criterion": 12,         # gamma on the valid region: pure downscaling
                   "gamma_data_types": "2r",
                   "min_bounds": [0], "max_bounds": [100],   # physical range of 2r
                   "lstm_steps": [7, 0],
