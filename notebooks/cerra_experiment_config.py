@@ -170,6 +170,7 @@ MODEL_DEFAULTS = {
     "conv_factor": 128,
     "batch_size": 64,
     "loss_criterion": 7,
+    "lambda_loss": "style,10.0"
     "save_model_interval": 2500,
     "log_interval": 500,
     "eval_timesteps": "0,100",
@@ -597,7 +598,7 @@ def header_block(config_name, run_name):
     ]
 
 
-def model_block(m):
+def model_block(m, eval=False):
     """Pass every model param through as a --flag line.
 
     key -> "--<key with dashes> value"; True booleans become the bare flag
@@ -608,6 +609,8 @@ def model_block(m):
     lines = []
     for key, val in m.items():
         flag = "--" + key.replace("_", "-")
+        if eval and ("encoding_layers" in key or "pooling_layers" in key):
+            val = [val,val]
         if isinstance(val, bool):
             if val:
                 lines.append(flag)
@@ -673,7 +676,7 @@ def render_eval_config(key, entry, names):
         f"--end-year {test_end}",
         "",
     ]
-    lines += model_block(m)
+    lines += model_block(m,eval=True)
     return "\n".join(lines) + "\n"
 
 
