@@ -679,7 +679,7 @@ def set_train_args(arg_file=None):
         type=str_list,
         default="",
         help="Comma separated list of 2D plots to be added to tensorboard "
-        "(error, distribution, correlation)",
+        "(error, distribution, correlation, rmse)",
     )
     arg_parser.add_argument(
         "--early-stopping-delta",

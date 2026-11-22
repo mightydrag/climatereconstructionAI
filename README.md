@@ -241,7 +241,7 @@ options:
   --val-metrics VAL_METRICS
                         Comma separated list of metrics that are evaluated on the val dataset at log-interval
   --tensor-plots TENSOR_PLOTS
-                        Comma separated list of 2D plots to be added to tensorboard (error, distribution, correlation)
+                        Comma separated list of 2D plots to be added to tensorboard (error, distribution, correlation, rmse)
   --early-stopping-delta EARLY_STOPPING_DELTA
                         Mean relative delta of the val loss used for the termination criterion
   --early-stopping-patience EARLY_STOPPING_PATIENCE

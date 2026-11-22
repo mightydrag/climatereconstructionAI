@@ -249,6 +249,48 @@ def create_map(mask, steady_mask, output, gt, num_samples=3):
     return fig
 
 
+def create_rmse_map(mask, steady_mask, output, gt, num_samples=3):
+    if steady_mask is not None:
+        mask += steady_mask
+        mask[mask < 0] = 0
+        mask[mask > 1] = 1
+        assert (
+            (mask == 0) | (mask == 1)
+        ).all(), "Not all values in mask are zeros or ones!"
+
+    num_channels = output.shape[2]
+    samples = torch.randint(output.shape[0], (num_samples,))
+
+    fig, axs = plt.subplots(
+        num_channels,
+        num_samples,
+        squeeze=False,
+        figsize=(num_samples * 7, num_channels * 7),
+    )
+
+    for ch in range(output.shape[2]):
+        gt_ch = gt[:, :, ch, :, :]
+        output_ch = output[:, :, ch, :, :]
+
+        for sample_num in range(num_samples):
+
+            target = gt_ch[samples[sample_num]].cpu().numpy()
+            pred = output_ch[samples[sample_num]].cpu().numpy()
+
+            values = np.sqrt(np.nanmean((pred - target) ** 2, axis=0))
+
+            vmin, vmax = np.nanquantile(values, [0.05, 0.95])
+            cp = axs[ch, sample_num].matshow(
+                values, cmap="YlOrRd", vmin=vmin, vmax=vmax
+            )
+            axs[ch, sample_num].set_xticks([])
+            axs[ch, sample_num].set_yticks([])
+            axs[ch, sample_num].set_title(f"sample {sample_num}")
+            plt.colorbar(cp, ax=axs[ch, sample_num])
+
+    return fig
+
+
 def get_all_error_distributions(
     mask, steady_mask, output, gt, domain="valid", num_samples=1000
 ):

@@ -14,6 +14,13 @@ def test_training_run(file):
 
 
 @pytest.mark.training
+def test_training_rmse_maps():
+    import glob
+    rmse_maps = glob.glob(testdir + "out/training/images/iter_*_rmse.jpg")
+    assert len(rmse_maps) > 0
+
+
+@pytest.mark.training
 @pytest.mark.parametrize("model", os.listdir(testdir + "in/training/"))
 def test_comp_models(model):
     import torch
