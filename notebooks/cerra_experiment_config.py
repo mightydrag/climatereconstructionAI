@@ -681,8 +681,16 @@ def experiment_names(key, cfg):
     up_tag = {"bilinear": "bilin", "nearest": "near"}.get(
         m["decoder_upsample"], str(m["decoder_upsample"])
     )
-    el_tag = str(m["encoding_layers"]).replace(",", "-")
-    po_tag = str(m["pooling_layers"]).replace(",", "-")
+
+    def num_tag(v):
+        # encoding/pooling layers may be "5,3" (primary,secondary / fusion) or
+        # a list [5, 3]; the run-name tag must be filesystem-safe
+        if isinstance(v, (list, tuple)):
+            return "-".join(str(x) for x in v)
+        return str(v).replace(",", "-")
+
+    el_tag = num_tag(m["encoding_layers"])
+    po_tag = num_tag(m["pooling_layers"])
     h = experiment_fingerprint(key, cfg)
     config_name = target_var
     run_name = (
