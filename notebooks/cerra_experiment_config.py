@@ -20,6 +20,8 @@ The script
      suffix -> new experiment),
   4. writes the train config (train-cnn-cerra-*.txt) and eval config
      (eval-cnn-cerra-*.txt) into input/levante/ and prints the submit commands.
+     The base file name defaults to the tag derived from the run name; a
+     config may override it with an optional "file_base" entry.
 
 Set force_rewrite = True in the settings to always rewrite the config files,
 even when their content is unchanged.
@@ -68,6 +70,10 @@ splits = {
 #      must be a valid var_names key AND the name of the data folder
 #    - "static_vars" defaults to [] if omitted
 #    - "model" (optional) overrides MODEL_DEFAULTS for this config
+#    - "file_base" (optional) sets the base name of the generated config
+#      files (train-cnn-cerra-<file_base>.txt, eval-cnn-cerra-<file_base>.txt);
+#      default: the tag derived from the run name. Only renames the files --
+#      the run name and its fingerprint hash are unchanged.
 # =========================================================
 CONFIGS = {
     # original multi-variable experiment
@@ -887,6 +893,7 @@ def render_eval_config(key, entry, names):
 os.makedirs(config_out_dir, exist_ok=True)
 
 seen_names = {}
+seen_files = {}
 for key, entry in written.items():
     names = experiment_names(key, entry["cfg"])
     if names in seen_names:
@@ -896,9 +903,21 @@ for key, entry in written.items():
     seen_names[names] = key
 
     config_name, run_name = names
-    file_tag = run_name[len("cerra-"):] if run_name.startswith("cerra-") else run_name
-    train_file = f"{train_prefix}{file_tag}.txt"
-    eval_file = f"{eval_prefix}{file_tag}.txt"
+    file_base = entry["cfg"].get("file_base")
+    if file_base:
+        if any(c in file_base for c in "/\\") or " " in file_base or file_base.strip() != file_base:
+            print(f"ERROR: file_base of config '{key}' must be a plain file-name base "
+                  f"(no path separators or whitespace), got '{file_base}'")
+            raise SystemExit(1)
+        if file_base in seen_files:
+            print(f"ERROR: configs '{seen_files[file_base]}' and '{key}' would write the "
+                  f"same config files -- set a different file_base on one of them")
+            raise SystemExit(1)
+        seen_files[file_base] = key
+    else:
+        file_base = run_name[len("cerra-"):] if run_name.startswith("cerra-") else run_name
+    train_file = f"{train_prefix}{file_base}.txt"
+    eval_file = f"{eval_prefix}{file_base}.txt"
     train_path = os.path.join(config_out_dir, train_file)
     eval_path = os.path.join(config_out_dir, eval_file)
 
