@@ -93,7 +93,7 @@ CONFIGS = {
     # mean for daily means of the other variables. Pass the same flags at
     # evaluation (they are part of the generated eval config automatically).
     "tp-all_var-3h-daily": {
-        "input_vars": ["tp", "t2m", "relative_humidity", "surface_pressure", "wind_speed", "wind_direction"],
+        "input_vars": ["tp", "t2m", "relative_humidity", "surface_pressure", "u", "v"],
         "static_vars": ["orography"],
         "target": "tp",
         "input_template": f"input_{subdaily_res}",
@@ -105,12 +105,13 @@ CONFIGS = {
                   "gamma_data_types": "tp",
                   "lstm_steps": [7, 0],           # trailing window: previous 8 steps
                   "target_aggregation": "sum",
-                  "target_time_offset": 0,
+                  "target_time_offset": 2,
                   "time_pooling": "attention",    # model maps the 8 steps to the daily total
-                  "gnn_layers": 2},
+                  #"gnn_layers": 2
+                  },
     },
     "relative_humidity-all_var-3h-daily": {
-        "input_vars": ["relative_humidity", "t2m", "surface_pressure", "wind_speed", "wind_direction"],
+        "input_vars": ["relative_humidity", "t2m", "surface_pressure", "wind_speed", "u", "v"],
         "static_vars": ["orography"],
         "target": "relative_humidity",
         "input_template": f"input_{subdaily_res}",
@@ -121,7 +122,53 @@ CONFIGS = {
                   "target_aggregation": "mean",
                   "target_time_offset": 0,
                   "time_pooling": "mean",         # daily mean directly from the window
-                  "gnn_layers": 2},
+                  # "gnn_layers": 2
+                  },
+    },
+    "t2m-all_var-3h-daily": {
+        "input_vars": ["t2m", "dewpoint", "surface_pressure", "u", "v"],
+        "static_vars": ["orography"],
+        "target": "t2m",
+        "input_template": f"input_{subdaily_res}",
+        "model": {"loss_criterion": 12,         # gamma on the valid region: pure downscaling
+                  #"gamma_data_types": "2r",
+                  #"min_bounds": [0], "max_bounds": [100],   # physical range of 2r
+                  "lstm_steps": [7, 0],
+                  "target_aggregation": "mean",
+                  "target_time_offset": 2,
+                  "time_pooling": "mean",         # daily mean directly from the window
+                  # "gnn_layers": 2
+                  },
+    },
+    "dewpoint-all_var-3h-daily": {
+        "input_vars": ["dewpoint", "t2m", "surface_pressure", "u", "v"],
+        "static_vars": ["orography"],
+        "target": "t2m",
+        "input_template": f"input_{subdaily_res}",
+        "model": {"loss_criterion": 12,         # gamma on the valid region: pure downscaling
+                  #"gamma_data_types": "2r",
+                  #"min_bounds": [0], "max_bounds": [100],   # physical range of 2r
+                  "lstm_steps": [7, 0],
+                  "target_aggregation": "mean",
+                  "target_time_offset": 2,
+                  "time_pooling": "mean",         # daily mean directly from the window
+                  # "gnn_layers": 2
+                  },
+    },
+    "t2m-all_var-3h-daily": {
+        "input_vars": ["t2m", "relative_humidity", "surface_pressure", "u", "v"],
+        "static_vars": ["orography"],
+        "target": "t2m",
+        "input_template": f"input_{subdaily_res}",
+        "model": {"loss_criterion": 12,         # gamma on the valid region: pure downscaling
+                  # "gamma_data_types": "2r",
+                  #"min_bounds": [0], "max_bounds": [100],   # physical range of 2r
+                  "lstm_steps": [7, 0],
+                  "target_aggregation": "mean",
+                  "target_time_offset": 2,
+                  "time_pooling": "mean",         # daily mean directly from the window
+                  # "gnn_layers": 2
+                  },
     },
     # precipitation experiment: tp + drivers
     "tp_tciwv-all_var": {
@@ -285,7 +332,8 @@ NC_TPL = {
     # can point at a different folder if ever needed:
     # swap {mask_folder} -> {mask_folder_test} here to use the test masks
     "mask_test":   "{mask_folder}/cerra_dm_{var}_{year}{reg_sfx}_filled_mask.nc",
-    "steady_mask": "{mask_folder}/cerra_dm_{var}_{steady_mask_year}{reg_sfx}_steady_mask.nc",
+    #"steady_mask": "{data_root}/{var}/cerra_mask_{var}_{steady_mask_year}{reg_sfx}_steady_mask.nc",
+    "steady_mask": "{data_root}/{var}/cerra_mask_{var}{other_sfx}{reg_sfx}.nc",
 }
 
 JSON_TPL = {
@@ -301,21 +349,20 @@ JSON_TPL = {
 # sub-daily input/mask templates for the chosen resolution (e.g. _3h files);
 # adjust the patterns to the actual sub-daily CERRA file names
 NC_TPL[f"input_{subdaily_res}"] = (
-    "{data_root}/{var}/cerra_dm_{var}_{year}{reg_sfx}{descriptor}{res_sfx}"
-    + subdaily_sfx + ".nc"
+    "{data_root}/{var}/cerra_{subdaily_sfx}_{var}_{year}{reg_sfx}{descriptor}{res_sfx}.nc"
 )
 NC_TPL[f"mask_{subdaily_res}"] = (
-    "{mask_folder}/cerra_dm_{var}_{year}{reg_sfx}_filled_mask" + subdaily_sfx + ".nc"
+    "{mask_folder}/cerra_{subdaily_sfx}_{var}_{year}{reg_sfx}_filled_mask.nc"
 )
-NC_TPL[f"mask_test_{subdaily_res}"] = NC_TPL[f"mask_{subdaily_res}"]
+NC_TPL[f"mask_test_{subdaily_res}"] = NC_TPL[f"mask_sub_{subdaily_res}"]
 JSON_TPL[f"input_{subdaily_res}"] = (
-    "cerra_{var}{reg_sfx}{descriptor}_{split}" + subdaily_sfx + ".json"
+    "cerra_{subdaily_sfx}_{var}{reg_sfx}{descriptor}_{split}.json"
 )
 JSON_TPL[f"mask_{subdaily_res}"] = (
-    "cerra_{var}{reg_sfx}{other_sfx}_mask" + subdaily_sfx + ".json"
+    "cerra_{subdaily_sfx}_{var}{reg_sfx}{other_sfx}_mask.json"
 )
 JSON_TPL[f"mask_test_{subdaily_res}"] = (
-    "cerra_{var}{reg_sfx}{other_sfx}_mask_test" + subdaily_sfx + ".json"
+    "cerra_{subdaily_sfx}_{var}{reg_sfx}{other_sfx}_mask_test.json"
 )
 
 
@@ -392,6 +439,9 @@ var_names = {
     "wind_speed":        "10si",
     "wind_direction":    "10wdir",
     "tciwv":             "tciwv",
+    "u":                 "u",
+    "v:":                "v",
+    "dewpoint":          "dewpoint"
 }
 
 

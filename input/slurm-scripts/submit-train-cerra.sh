@@ -11,7 +11,7 @@
 #   stderr   : .../train-cnn-cerra-t2m-ger.e<jobid>
 
 set -euo pipefail
-
+cd /work/uo1075/u244085/trees_in_the_city/ML_downscaling/Physics-Informed-CNN-Reconstructions/input/slurm-scripts/
 # --- settings --------------------------------------------------------------
 PREFIX="train-cnn-cerra-"
 JOB_SCRIPT="slurm-train-crai.sh"   # the sbatch file with the SBATCH resource headers
