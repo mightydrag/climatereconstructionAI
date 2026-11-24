@@ -170,6 +170,11 @@ def eval_args(parser, arg_file=None, prog_func=None):
     if not os.path.exists(evaluation_dirs[0]):
         os.makedirs(evaluation_dirs[0])
 
+    import sys
+    from .utils.save_input_params import save_input_params
+
+    save_input_params(sys.modules[__name__], evaluation_dirs[0])
+
     return args
 
 
