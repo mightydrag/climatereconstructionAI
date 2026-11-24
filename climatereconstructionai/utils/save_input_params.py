@@ -1,26 +1,30 @@
-import os
 import json
+import os
+import types
 
 
-def save_input_params(cfg, dir, filename="input_params_summary.json"):
+def _is_config_value(value):
+    return not isinstance(
+        value, (types.ModuleType, types.FunctionType, types.BuiltinFunctionType, type)
+    )
+
+
+def save_input_params(cfg, dir, filename="config.json"):
     """
-    Save the input parameters to a JSON file in the snapshot directory.
+    Save the full configuration to a JSON file in the experiment directory
+    (snapshot directory for training, evaluation directory for evaluation).
 
     Parameters:
     cfg (module): The configuration module containing the parameters.
-    filename (str): The name of the summary file to save.
+    dir (str): Directory in which the config file is saved.
+    filename (str): The name of the config file to save.
     """
-    # Collect relevant input parameters
-    input_params = {
-        "lr": cfg.lr,
-        "n_filters": cfg.n_filters,
-        "out_channels": cfg.out_channels,
-        "encoding_layers": cfg.encoding_layers,
-        "pooling_layers": cfg.pooling_layers,
-        "n_channel_steps": cfg.n_channel_steps,
+    config = {
+        key: value
+        for key, value in vars(cfg).items()
+        if not key.startswith("_") and _is_config_value(value)
     }
 
-    # Write the parameters to a JSON file in the snapshot directory
-    summary_file = os.path.join(dir, filename)
-    with open(summary_file, "w") as f:
-        json.dump(input_params, f, indent=4)
+    config_file = os.path.join(dir, filename)
+    with open(config_file, "w") as f:
+        json.dump(config, f, indent=4, default=str)

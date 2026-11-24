@@ -66,7 +66,7 @@ def train(arg_file=None):
     writer = twriter.writer()
     writer.set_hparams(cfg.passed_args)
 
-    # Save input parameters to a summary file
+    # Save the full config to the snapshot dir for documentation
     save_input_params(cfg, dir=cfg.snapshot_dir)
     print("data root dir", cfg.data_root_dir)
     # create data sets
