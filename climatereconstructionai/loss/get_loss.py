@@ -9,6 +9,7 @@ from .bernoulli_loss import BernoulliLoss, BernoulliLossValid
 from .precip_loss import PrecipLoss, PrecipLossValid
 from .gamma_loss import GammaLoss, GammaLossValid
 from .bern_gamma_loss import BernoulliGammaLoss, BernoulliGammaLossValid
+from .hurdle_loss import HurdleGammaLoss, HurdleGammaLossValid
 from .. import config as cfg
 from ..utils.featurizer import VGG16FeatureExtractor
 from ..utils.normalizer import is_precip_data_type
@@ -162,6 +163,18 @@ class loss_criterion(torch.nn.Module):
                                                                    bern_thresholds,
                                                                    getattr(cfg, 'gamma_shape', 1.0),
                                                                    gamma_channels).to(cfg.device))
+
+                elif loss == 'hurdle_gamma' and getattr(cfg, 'hurdle_data_types', None):
+                    self.criterions.append(HurdleGammaLoss(getattr(cfg, 'hurdle_threshold', 0.1),
+                                                           select_channels(cfg.hurdle_data_types),
+                                                           train_stats).to(cfg.device))
+                    self.tensors.append('hurdle_gamma')
+
+                elif loss == 'hurdle_gamma_valid' and getattr(cfg, 'hurdle_data_types', None):
+                    self.criterions.append(HurdleGammaLossValid(getattr(cfg, 'hurdle_threshold', 0.1),
+                                                                select_channels(cfg.hurdle_data_types),
+                                                                train_stats).to(cfg.device))
+                    self.tensors.append('hurdle_gamma_valid')
 
 
     def forward(self, img_mask, loss_mask, output, gt):

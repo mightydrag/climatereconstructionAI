@@ -14,6 +14,7 @@ def setup_cfg(**overrides):
     cfg.target_aggregation = "none"
     cfg.target_time_offset = 0
     cfg.time_pooling = "none"
+    cfg.time_pooling_channel_modes = None
     cfg.precip_log_transform = False
     cfg.normalize_data = False
     cfg.lazy_load = False
@@ -234,7 +235,7 @@ def test_crainet_time_pooling():
         assert torch.isfinite(out).all()
         out.sum().backward()
         if mode == "attention":
-            assert model.time_pool.score.weight.grad is not None
+            assert model.time_pools[0].score.weight.grad is not None
 
     # without pooling the model still returns one output per input step
     cfg.time_pooling = "none"
@@ -244,6 +245,50 @@ def test_crainet_time_pooling():
     )
     out = model(image, mask)
     assert out.shape == (2, 3, 1, 16, 16)
+
+
+def test_crainet_time_pooling_per_channel_modes():
+    from climatereconstructionai.model.net import CRAINet
+
+    setup_cfg(target_aggregation="sum")
+    cfg.lstm_steps = [1, 1]
+    cfg.recurrent_steps = 1
+    cfg.n_recurrent_steps = 3
+    cfg.gnn_layers = 0
+    cfg.attention = False
+    cfg.skip_layers = 1
+    cfg.n_channel_steps = 2
+    cfg.n_filters = None
+    cfg.conv_factor = 8
+    cfg.weights = None
+    cfg.global_padding = False
+    cfg.masked_bn = False
+    cfg.disable_first_bn = False
+    cfg.decoder_upsample = "bilinear"
+    cfg.time_pooling = "attention"
+    cfg.time_pooling_channel_modes = ["attention", "attention_sum"]
+    bounds = np.array([[-np.inf, np.inf]])
+    g = torch.Generator().manual_seed(0)
+    image = torch.randn(2, 3, 2, 16, 16, generator=g)
+    mask = torch.ones(2, 3, 2, 16, 16)
+
+    model = CRAINet(
+        img_size=(16, 16), enc_dec_layers=2, pool_layers=1,
+        in_channels=2, out_channels=1, bounds=bounds,
+    )
+    # one pooling module per skip level (input + one per encoder level)
+    assert len(model.time_pools) == 4
+    w0 = model.time_pools[0].weights(image)
+    # channel 0: softmax weights sum to 1 over T; channel 1: positive, unnormalized
+    assert torch.allclose(w0[:, :, 0].sum(dim=1), torch.ones(2, 16, 16), atol=1e-6)
+    assert (w0[:, :, 1] > 0).all()
+    assert w0[:, :, 1].sum(dim=1).mean() > 1.0
+
+    out = model(image, mask)
+    assert out.shape == (2, 1, 1, 16, 16)
+    assert torch.isfinite(out).all()
+    out.sum().backward()
+    assert model.time_pools[0].score.weight.grad is not None
 
 
 def test_loss_computation_with_aggregation():

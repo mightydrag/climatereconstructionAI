@@ -38,6 +38,14 @@ def renormalize(img_data, img_mean, img_std):
     return img_std * img_data + img_mean
 
 
+def target_data_types():
+    # the target data types (last --data-types entries) in one place, so the
+    # model (bounds scaling, hurdle head) and the losses agree on them
+    if getattr(cfg, "n_target_data", 0) > 0:
+        return list(cfg.data_types[-cfg.n_target_data:])
+    return list(cfg.data_types[: cfg.out_channels])
+
+
 def bnd_normalization(img_mean, img_std):
 
     bounds = np.ones((cfg.out_channels, 2)) * np.inf
@@ -47,10 +55,7 @@ def bnd_normalization(img_mean, img_std):
     else:
         mean_val, std_val = img_mean[-cfg.n_target_data:], img_std[-cfg.n_target_data:]
 
-    if cfg.n_target_data == 0:
-        target_types = cfg.data_types[: cfg.out_channels]
-    else:
-        target_types = cfg.data_types[-cfg.n_target_data :]
+    target_types = target_data_types()
 
     k = 0
     for bound in (cfg.min_bounds, cfg.max_bounds):

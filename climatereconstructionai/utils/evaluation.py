@@ -12,7 +12,8 @@ import properscoring as ps
 
 from .netcdfchecker import reformat_dataset
 from .netcdfloader import load_steadymask
-from .normalizer import renormalize, precip_log_inverse
+from .normalizer import renormalize, precip_log_inverse, is_precip_data_type, target_data_types
+from .sampling import sample_members
 from .plotdata import plot_data
 from .. import config as cfg
 from tqdm import tqdm
@@ -225,6 +226,46 @@ def infill(model, dataset, eval_path, output_names, data_stats, xr_dss, i_model)
             data_dict["output"] = data_dict["output"][:, cfg.recurrent_steps, :, :, :].to(
                 torch.device("cpu")
             )
+
+        # hurdle head active: collapse the 3 output channels per hurdle
+        # variable to one channel per target again, so blending, denormalization,
+        # metrics and saving all work unchanged. The point forecast is p * mu
+        # (raw units); with --n-ensemble-members > 1 the mean of a copula-sampled
+        # ensemble is used instead, which also gives the two sampling flags a
+        # live code path at eval time.
+        if getattr(model, "hurdle_head", None) is not None:
+            layout = model.hurdle_layout
+            target_types = target_data_types()
+            out = data_dict["output"]
+            n_members = getattr(cfg, "n_ensemble_members", 1)
+            point = out.new_zeros(out.shape[0], len(layout), *out.shape[-2:])
+            for c, is_hurdle, start, n in layout:
+                if not is_hurdle:
+                    point[:, c] = out[:, start]
+                    continue
+                logit_p, k, mu = out[:, start], out[:, start + 1], out[:, start + 2]
+                if n_members > 1:
+                    members = sample_members(
+                        logit_p.unsqueeze(1), k.unsqueeze(1), mu.unsqueeze(1),
+                        n_members=n_members,
+                        sigma_px=getattr(cfg, "hurdle_sigma_px", 6.0),
+                    )
+                    point[:, c] = members.mean(dim=0).squeeze(1)
+                else:
+                    point[:, c] = torch.sigmoid(logit_p) * mu
+            # hurdle point forecasts are raw; express them in the normalized
+            # space of the other channels (log1p + z-norm for precip types)
+            if cfg.normalize_data and data_stats is not None:
+                start_idx = len(data_stats["mean"]) - len(layout)
+                for c, is_hurdle, start, n in layout:
+                    if not is_hurdle:
+                        continue
+                    v = point[:, c]
+                    if is_precip_data_type(target_types[c]):
+                        v = torch.log1p(v.clamp_min(0.0))
+                    point[:, c] = (v - data_stats["mean"][start_idx + c]) / data_stats["std"][start_idx + c]
+            data_dict["output"] = point
+
         for key in ("image", "mask", "gt"):
             data_dict[key] = data_dict[key][:, cfg.recurrent_steps, :, :, :].to(
                 torch.device("cpu")

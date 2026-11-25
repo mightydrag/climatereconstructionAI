@@ -16,8 +16,19 @@ def bnd_exp(output, y0, sign=1):
     return output + y0
 
 
+TEMPERATURE_TYPES = {"2t", "t2m", "tas", "tasmax", "tasmin", "t2max", "t2min"}
+DEWPOINT_TYPES = {"dewpoint", "tdps", "dew_point"}
+
+
+def dewpoint_temperature_pairs(target_types):
+    types = [str(data_type).strip().lower() for data_type in target_types]
+    temps = [i for i, t in enumerate(types) if t in TEMPERATURE_TYPES]
+    dews = [i for i, t in enumerate(types) if t in DEWPOINT_TYPES]
+    return [(d, t) for d in dews for t in temps]
+
+
 class constrain_bounds():
-    def __init__(self, bounds):
+    def __init__(self, bounds, target_types=None):
 
         self.params = []
         self.binders = []
@@ -37,8 +48,22 @@ class constrain_bounds():
                 else:
                     self.params.append([bounds[i, 0]])
 
-    def scale(self, output):
-        for i in range(self.n_bounds):
-            output[:, :, i, :, :] = self.binders[i](output[:, :, i, :, :], *self.params[i])
+        if target_types is None:
+            self.td_t_pairs = []
+        else:
+            assert len(target_types) == self.n_bounds, (
+                f"Number of target types ({len(target_types)}) does not match number of "
+                f"output channels ({self.n_bounds})."
+            )
+            self.td_t_pairs = dewpoint_temperature_pairs(target_types)
 
-        return output
+    def scale(self, output):
+        channels = [
+            self.binders[i](output[:, :, i, :, :], *self.params[i])
+            for i in range(self.n_bounds)
+        ]
+
+        for td_idx, t_idx in self.td_t_pairs:
+            channels[td_idx] = torch.minimum(channels[td_idx], channels[t_idx])
+
+        return torch.stack(channels, dim=2)
