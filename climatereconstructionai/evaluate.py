@@ -9,6 +9,7 @@ from .utils.evaluation import (
     plot_gridwise_correlation,
 )
 from .utils.io import load_ckpt, load_model
+from .utils.save_input_params import save_input_params
 from torch.utils.data import DataLoader
 from .utils.netcdfloader import NetCDFLoader, FiniteSampler
 from .evaluate_pp_skill import evaluate_pp_skill
@@ -49,6 +50,9 @@ def evaluate(arg_file=None, prog_func=None):
         os.makedirs(f"{cfg.evaluation_dirs[0]}/images")
     if not os.path.exists(f"{cfg.evaluation_dirs[0]}/data"):
         os.makedirs(f"{cfg.evaluation_dirs[0]}/data")
+
+    # save the passed config next to the evaluation outputs
+    save_input_params(cfg, dir=cfg.evaluation_dirs[0])
 
     n_models = len(cfg.model_names)
     cfg.model_names = [resolve_model_name(cfg.model_dir, name) for name in cfg.model_names]
