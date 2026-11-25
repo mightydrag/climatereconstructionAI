@@ -302,8 +302,8 @@ def test_set_lambdas_hurdle_presets():
     setup_cfg()  # also resets hurdle_data_types so later test files are unaffected
     cfg.lambda_loss = None
     for criterion, keys in [
-        (13, {"valid", "hurdle_gamma", "tv", "prc", "style"}),
-        (14, {"valid", "hurdle_gamma_valid", "tv_valid", "prc", "style"}),
+        (13, {"hurdle_gamma"}),
+        (14, {"hurdle_gamma_valid"}),
     ]:
         cfg.loss_criterion = criterion
         cfg.set_lambdas()

@@ -142,21 +142,15 @@ def set_lambdas():
 
     elif loss_criterion == 13:
         # hurdle-gamma distributional head on the hole region
-        # (requires --hurdle-data-types)
-        lambda_dict["valid"] = 1.0
+        # (requires --hurdle-data-types; the scalar per-channel losses are not
+        # compatible with the multi-channel hurdle output, so this preset
+        # contains only the hurdle term)
         lambda_dict["hurdle_gamma"] = 6.0
-        lambda_dict["tv"] = 0.1
-        lambda_dict["prc"] = 0.05
-        lambda_dict["style"] = 120.0
 
     elif loss_criterion == 14:
         # hurdle-gamma distributional head on the valid region
         # (requires --hurdle-data-types)
-        lambda_dict["valid"] = 1.0
         lambda_dict["hurdle_gamma_valid"] = 6.0
-        lambda_dict["tv_valid"] = 0.1
-        lambda_dict["prc"] = 0.05
-        lambda_dict["style"] = 120.0
 
     if lambda_loss is not None:
         lambda_dict.update(lambda_loss)
