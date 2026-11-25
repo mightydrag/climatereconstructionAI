@@ -10,6 +10,8 @@ from .conv_configs import (
 )
 from .encoder_decoder import EncoderBlock, DecoderBlock, sequence_to_batch, batch_to_sequence
 from .bounds_scaler import constrain_bounds
+from .heads import HurdleGammaHead, hurdle_output_layout
+from ..utils.normalizer import target_data_types
 from .graph_conv_module import GraphConvBlock
 from .time_pooling import TimePooling
 from .. import config as cfg
@@ -156,7 +158,23 @@ class CRAINet(nn.Module):
         # single (daily) output field directly inside the model
         self.time_pooling = getattr(cfg, "time_pooling", "none")
         if self.time_pooling != "none":
-            self.time_pool = TimePooling(self.time_pooling)
+            channel_modes = getattr(cfg, "time_pooling_channel_modes", None)
+            level_channels = [enc_conv_configs[0]["in_channels"]] + [
+                enc_conv_configs[i]["out_channels"] for i in range(self.net_depth)
+            ]
+            if channel_modes is not None:
+                assert len(channel_modes) == level_channels[0], (
+                    "--time-pooling-channel-modes must have one entry per input "
+                    f"channel ({level_channels[0]}), got {len(channel_modes)}"
+                )
+            self.time_pools = nn.ModuleList()
+            for c in level_channels:
+                modes = None
+                if channel_modes is not None:
+                    modes = (list(channel_modes) * (c // len(channel_modes) + 1))[:c]
+                self.time_pools.append(
+                    TimePooling(c, mode=self.time_pooling, channel_modes=modes)
+                )
 
         # optional graph convolution (GNN) layers at the bottleneck
         self.gnn_layers = getattr(cfg, "gnn_layers", 0)
@@ -169,9 +187,63 @@ class CRAINet(nn.Module):
                 ]
             )
 
-        self.binder = constrain_bounds(bounds)
+        # optional distributional head for selected target variables; when
+        # disabled (default) the output is a single bounds-scaled channel per
+        # variable, exactly as before
+        if getattr(cfg, "data_types", None) is not None:
+            target_types = target_data_types()
+        else:
+            target_types = []
+        if len(target_types) == len(bounds):
+            self.binder = constrain_bounds(bounds, target_types=target_types)
+        else:
+            self.binder = constrain_bounds(bounds)
+        self.hurdle_types = [
+            t for t in (getattr(cfg, "hurdle_data_types", None) or []) if t in target_types
+        ]
+        if self.hurdle_types:
+            self.hurdle_layout = hurdle_output_layout(target_types, self.hurdle_types)
+            self.hurdle_head = HurdleGammaHead(
+                dec_conv_configs[self.net_depth - 1]["out_channels"], len(self.hurdle_types)
+            )
+        else:
+            self.hurdle_layout = None
+            self.hurdle_head = None
 
-    def forward(self, input, input_mask):
+    def _apply_hurdle_head(self, h, coarse_up=None):
+        # h: (B, T, C, H, W) decoder output with C == out_channels; returns
+        # (B, T, C_out, H, W) where each hurdle variable occupies 3 channels
+        # (occurrence logit, gamma shape, conditional mean) and plain
+        # variables keep their bounds-scaled channel
+        b, t, c, hh, ww = h.shape
+        n_out_total = self.hurdle_layout[-1][2] + self.hurdle_layout[-1][3]
+        out = h.new_zeros(b, t, n_out_total, hh, ww)
+        plain_channels = {}
+        for target_idx, is_hurdle, out_start, n_out in self.hurdle_layout:
+            if not is_hurdle:
+                ch = h[:, :, target_idx:target_idx + 1]
+                ch = self.binder.binders[target_idx](ch, *self.binder.params[target_idx])
+                plain_channels[target_idx] = (out_start, ch)
+        for td_idx, t_idx in self.binder.td_t_pairs:
+            if td_idx in plain_channels and t_idx in plain_channels:
+                out_start, ch = plain_channels[td_idx]
+                plain_channels[td_idx] = (
+                    out_start,
+                    torch.minimum(ch, plain_channels[t_idx][1]),
+                )
+        for target_idx, (out_start, ch) in plain_channels.items():
+            out[:, :, out_start:out_start + 1] = ch
+        x = h.reshape(b * t, c, hh, ww)
+        logit_p, k, mu = self.hurdle_head(x, coarse_up=coarse_up)
+        j = 0
+        for target_idx, is_hurdle, out_start, n_out in self.hurdle_layout:
+            if is_hurdle:
+                triple = torch.cat([logit_p[:, j:j + 1], k[:, j:j + 1], mu[:, j:j + 1]], dim=1)
+                out[:, :, out_start:out_start + 3] = triple.reshape(b, t, 3, hh, ww)
+                j += 1
+        return out
+
+    def forward(self, input, input_mask, coarse_up=None):
         # create lists for skip connections
         # We split the inputs in case we use the attention module with different image dimension
         h_index = cfg.n_channel_steps
@@ -273,7 +345,24 @@ class CRAINet(nn.Module):
         # collapse the time window to a single output field (e.g. daily)
         if self.time_pooling != "none" and cfg.recurrent_steps:
             for i in range(len(hs)):
-                hs[i] = self.time_pool(hs[i])
+                pool = self.time_pools[i]
+                ref = hs[i].shape[2:]  # (C, H, W) of this level before pooling
+                w_attn = pool.attention_weights(hs[i]) if pool.uses_attention else {}
+                # pool the recurrent state of the matching encoder level with
+                # the same weights so the decoder state is not biased toward
+                # the last time step (skipped for fusion-concatenated states,
+                # whose channel count exceeds the level's skip channels)
+                if i > 0 and recurrent_states[i - 1] is not None:
+                    state = recurrent_states[i - 1]
+                    states = state if isinstance(state, tuple) else (state,)
+                    if all(s.shape[1:] == ref for s in states):
+                        pooled = tuple(
+                            pool.apply_state(s, hs[i].shape[1], w_attn) for s in states
+                        )
+                        recurrent_states[i - 1] = (
+                            pooled if isinstance(state, tuple) else pooled[0]
+                        )
+                hs[i] = pool(hs[i])
                 hs_mask[i] = hs_mask[i].mean(dim=1, keepdim=True)
 
         h, h_mask = hs[self.net_depth], hs_mask[self.net_depth]
@@ -307,7 +396,10 @@ class CRAINet(nn.Module):
                     None,
                 )
 
-        h = self.binder.scale(h)
+        if self.hurdle_head is not None:
+            h = self._apply_hurdle_head(h, coarse_up=coarse_up)
+        else:
+            h = self.binder.scale(h)
 
         # return last element of output from last decoding layer
         return h

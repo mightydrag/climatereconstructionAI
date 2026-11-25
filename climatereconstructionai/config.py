@@ -140,6 +140,18 @@ def set_lambdas():
         lambda_dict["prc"] = 0.05
         lambda_dict["style"] = 120.0
 
+    elif loss_criterion == 13:
+        # hurdle-gamma distributional head on the hole region
+        # (requires --hurdle-data-types; the scalar per-channel losses are not
+        # compatible with the multi-channel hurdle output, so this preset
+        # contains only the hurdle term)
+        lambda_dict["hurdle_gamma"] = 6.0
+
+    elif loss_criterion == 14:
+        # hurdle-gamma distributional head on the valid region
+        # (requires --hurdle-data-types)
+        lambda_dict["hurdle_gamma_valid"] = 6.0
+
     if lambda_loss is not None:
         lambda_dict.update(lambda_loss)
 
@@ -218,6 +230,15 @@ def global_args(parser, arg_file=None, prog_func=None):
         recurrent_steps = 0
 
     n_recurrent_steps = sum(time_steps) + 1
+
+    global time_pooling_channel_modes
+    if time_pooling_channel_modes is not None:
+        assert time_pooling != "none", (
+            "--time-pooling-channel-modes requires --time-pooling"
+        )
+        time_pooling_channel_modes = [
+            m.strip() for m in time_pooling_channel_modes.split(",") if m.strip()
+        ]
 
     if time_pooling != "none":
         assert target_aggregation != "none", (
@@ -441,12 +462,26 @@ def set_common_args():
     )
     arg_parser.add_argument(
         "--time-pooling",
-        choices=("none", "mean", "last", "sum", "attention"),
+        choices=("none", "mean", "last", "sum", "attention", "attention_sum"),
         default="none",
         help="Collapse the input time window to a single (aggregated, e.g. "
         "daily) output field inside the model, instead of producing one output "
-        "per input step. 'attention' learns per-step weights. Requires "
-        "--target-aggregation and --lstm-steps/--gru-steps. Default 'none'",
+        "per input step. 'attention' learns per-step, per-channel, per-pixel "
+        "weights (softmax over time); 'attention_sum' uses positive "
+        "unnormalized weights so accumulated variables are not forced to a "
+        "mean. Requires --target-aggregation and "
+        "--lstm-steps/--gru-steps. Default 'none'",
+    )
+    arg_parser.add_argument(
+        "--time-pooling-channel-modes",
+        type=str,
+        default=None,
+        help="Comma-separated per-channel pooling modes aligned with the input "
+        "channels of the first encoder level, e.g. "
+        "'attention,attention_sum' for a mean-like and an accumulated "
+        "variable; tiled to the feature channels of the deeper levels. "
+        "Entries: mean, sum, last, attention, attention_sum. "
+        "Requires --time-pooling",
     )
     arg_parser.add_argument(
         "--target-time-offset",
@@ -631,7 +666,8 @@ def set_train_args(arg_file=None):
         help="Index defining the loss function "
         "(0=original from Liu et al., 1=MAE of the hole region, "
         "4=precipitation-weighted hole loss, 5/8=precipitation-weighted + Bernoulli, "
-        "9/10=two-stage Bernoulli-Gamma, 11=gamma; individual loss terms can also be "
+        "9/10=two-stage Bernoulli-Gamma, 11/12=gamma, 13/14=hurdle-gamma "
+        "distributional head; individual loss terms can also be "
         "set via --lambda-loss)",
     )
     arg_parser.add_argument(
@@ -705,6 +741,38 @@ def set_train_args(arg_file=None):
         default=None,
         help="Comma separated data type names to which the gamma/Bernoulli-Gamma "
         "loss is applied (default: all output channels)",
+    )
+    arg_parser.add_argument(
+        "--hurdle-data-types",
+        type=str_list,
+        default=None,
+        help="Comma separated target data type names that use the hurdle-gamma "
+        "distributional head (3 output channels each: occurrence logit, gamma "
+        "shape, conditional mean). Default None: disabled, each variable keeps "
+        "its single bounds-scaled output channel as before",
+    )
+    arg_parser.add_argument(
+        "--hurdle-threshold",
+        type=float,
+        default=0.1,
+        help="Raw-unit threshold above which a pixel counts as wet in the "
+        "hurdle-gamma loss",
+    )
+    arg_parser.add_argument(
+        "--hurdle-sigma-px",
+        type=float,
+        default=6.0,
+        help="Decorrelation length in pixels of the correlated Gaussian noise "
+        "used for spatially coherent sampling from the hurdle-gamma head "
+        "(used at evaluation when --n-ensemble-members > 1)",
+    )
+    arg_parser.add_argument(
+        "--n-ensemble-members",
+        type=int,
+        default=1,
+        help="Number of ensemble members drawn with the copula sampler; at "
+        "evaluation of a hurdle-head model (>1) the output is the mean of "
+        "that many sampled members, 1 (default) uses the point forecast p*mu",
     )
     arg_parser.add_argument(
         "--val-metrics",
