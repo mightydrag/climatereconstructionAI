@@ -11,6 +11,7 @@ from .conv_configs import (
 from .encoder_decoder import EncoderBlock, DecoderBlock, sequence_to_batch, batch_to_sequence
 from .bounds_scaler import constrain_bounds
 from .heads import HurdleGammaHead, hurdle_output_layout
+from ..utils.normalizer import target_data_types
 from .graph_conv_module import GraphConvBlock
 from .time_pooling import TimePooling
 from .. import config as cfg
@@ -189,15 +190,8 @@ class CRAINet(nn.Module):
         # optional distributional head for selected target variables; when
         # disabled (default) the output is a single bounds-scaled channel per
         # variable, exactly as before
-        data_types = getattr(cfg, "data_types", None)
-        n_target_data = getattr(cfg, "n_target_data", 0)
-        if data_types is not None:
-            if n_target_data > 0:
-                target_types = list(data_types[-n_target_data:])
-            else:
-                target_types = list(
-                    data_types[: getattr(cfg, "out_channels", len(bounds))]
-                )
+        if getattr(cfg, "data_types", None) is not None:
+            target_types = target_data_types()
         else:
             target_types = []
         if len(target_types) == len(bounds):
@@ -351,9 +345,9 @@ class CRAINet(nn.Module):
         # collapse the time window to a single output field (e.g. daily)
         if self.time_pooling != "none" and cfg.recurrent_steps:
             for i in range(len(hs)):
-                w = self.time_pools[i].weights(hs[i])
-                hs[i] = (hs[i] * w).sum(dim=1, keepdim=True)
-                hs_mask[i] = hs_mask[i].mean(dim=1, keepdim=True)
+                pool = self.time_pools[i]
+                ref = hs[i].shape[2:]  # (C, H, W) of this level before pooling
+                w_attn = pool.attention_weights(hs[i]) if pool.uses_attention else {}
                 # pool the recurrent state of the matching encoder level with
                 # the same weights so the decoder state is not biased toward
                 # the last time step (skipped for fusion-concatenated states,
@@ -361,11 +355,15 @@ class CRAINet(nn.Module):
                 if i > 0 and recurrent_states[i - 1] is not None:
                     state = recurrent_states[i - 1]
                     states = state if isinstance(state, tuple) else (state,)
-                    if all(s.shape[1:] == w.shape[2:] for s in states):
-                        pooled = tuple((s.unsqueeze(1) * w).sum(dim=1) for s in states)
+                    if all(s.shape[1:] == ref for s in states):
+                        pooled = tuple(
+                            pool.apply_state(s, hs[i].shape[1], w_attn) for s in states
+                        )
                         recurrent_states[i - 1] = (
                             pooled if isinstance(state, tuple) else pooled[0]
                         )
+                hs[i] = pool(hs[i])
+                hs_mask[i] = hs_mask[i].mean(dim=1, keepdim=True)
 
         h, h_mask = hs[self.net_depth], hs_mask[self.net_depth]
 

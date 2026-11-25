@@ -41,6 +41,20 @@ class HurdleGammaHead(nn.Module):
         return logit_p, k, mu
 
 
+def hurdle_point_output(output, layout):
+    # collapse a hurdle-head output (B, C_out, H, W) to one channel per target
+    # variable (B, n_targets, H, W): the point forecast p * mu (raw units) for
+    # hurdle variables, the plain channel copied for the others
+    b, _, h, w = output.shape
+    point = output.new_zeros(b, len(layout), h, w)
+    for c, is_hurdle, start, n in layout:
+        if is_hurdle:
+            point[:, c] = torch.sigmoid(output[:, start]) * output[:, start + 2]
+        else:
+            point[:, c] = output[:, start]
+    return point
+
+
 def conserve_hurdle(logit_p, k, mu, coarse_pr, max_corr=10.0):
     # rescale mu multiplicatively so the pooled expected value p * mu of the
     # predictive distribution matches the coarse field (mean conservation)

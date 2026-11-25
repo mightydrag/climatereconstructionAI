@@ -763,13 +763,16 @@ def set_train_args(arg_file=None):
         type=float,
         default=6.0,
         help="Decorrelation length in pixels of the correlated Gaussian noise "
-        "used for spatially coherent sampling from the hurdle-gamma head",
+        "used for spatially coherent sampling from the hurdle-gamma head "
+        "(used at evaluation when --n-ensemble-members > 1)",
     )
     arg_parser.add_argument(
         "--n-ensemble-members",
         type=int,
         default=1,
-        help="Number of ensemble members drawn with the copula sampler",
+        help="Number of ensemble members drawn with the copula sampler; at "
+        "evaluation of a hurdle-head model (>1) the output is the mean of "
+        "that many sampled members, 1 (default) uses the point forecast p*mu",
     )
     arg_parser.add_argument(
         "--val-metrics",

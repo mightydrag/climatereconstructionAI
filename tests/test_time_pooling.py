@@ -58,3 +58,29 @@ def test_channel_modes_length_must_match():
 def test_unknown_mode_rejected():
     with pytest.raises(AssertionError):
         TimePooling(2, "median")
+
+
+def test_apply_matches_full_weights_all_modes():
+    torch.manual_seed(0)
+    h = torch.randn(2, 4, 5, 6, 7)
+    for modes in (["mean"] * 5, ["sum"] * 5, ["last"] * 5,
+                  ["attention"] * 5, ["mean", "sum", "last", "attention", "attention_sum"]):
+        pool = TimePooling(5, channel_modes=modes)
+        w = pool.weights(h)
+        expected = (h * w).sum(dim=1, keepdim=True)
+        out = pool(h)
+        assert torch.allclose(out, expected, atol=1e-6), modes
+
+
+def test_apply_state_matches_full_weight_pooling():
+    torch.manual_seed(0)
+    h = torch.randn(2, 4, 3, 5, 6)
+    s = torch.randn(2, 3, 5, 6)
+    for modes in (["mean"] * 3, ["sum"] * 3, ["last"] * 3,
+                  ["mean", "attention", "attention_sum"]):
+        pool = TimePooling(3, channel_modes=modes)
+        w = pool.weights(h)
+        expected = (s.unsqueeze(1) * w).sum(dim=1)
+        w_attn = pool.attention_weights(h)
+        out = pool.apply_state(s, h.shape[1], w_attn)
+        assert torch.allclose(out, expected, atol=1e-6), modes

@@ -35,6 +35,7 @@ def setup_cfg(**overrides):
     cfg.multi_gpus = False
     cfg.data_types = ["tas", "pr"]
     cfg.out_channels = 2
+    cfg.n_target_data = 0  # targets = data_types[:out_channels] (== all here)
     cfg.hurdle_data_types = None
     cfg.hurdle_threshold = 0.1
     cfg.gt_channels = [0, 1]
@@ -296,6 +297,7 @@ def test_cranet_hurdle_head_channel_layout():
     assert out.shape == (2, 1, 4, 32, 32)
     k, mu = out[:, :, 2], out[:, :, 3]
     assert (k >= 0.5).all() and (mu > 0).all()
+    setup_cfg()  # reset hurdle_data_types so later test files are unaffected
 
 
 def test_set_lambdas_hurdle_presets():
@@ -309,3 +311,28 @@ def test_set_lambdas_hurdle_presets():
         cfg.set_lambdas()
         assert set(cfg.lambda_dict.keys()) == keys
         assert all(v > 0 for v in cfg.lambda_dict.values())
+
+
+def test_hurdle_loss_with_only_valid_input():
+    # pure downscaling (no holes): the hole-region variant has no signal
+    # (exactly 0, still finite), the valid-region variant trains normally
+    setup_cfg(hurdle_data_types=["pr"], data_types=["pr"], out_channels=1)
+    data_dict = make_hurdle_data_dict(batch=1, channels=1, seed=9)
+    data_dict["mask"] = torch.ones_like(data_dict["mask"])
+    hole_loss = HurdleGammaLoss(threshold=0.1)(data_dict)["hurdle_gamma"]
+    valid_loss = HurdleGammaLossValid(threshold=0.1)(data_dict)["hurdle_gamma_valid"]
+    assert hole_loss.item() == 0.0 and torch.isfinite(hole_loss)
+    assert torch.isfinite(valid_loss) and valid_loss > 0
+    setup_cfg()  # reset hurdle_data_types so later test files are unaffected
+
+
+def test_hurdle_point_output_layout():
+    from climatereconstructionai.model.heads import hurdle_point_output
+
+    layout = hurdle_output_layout(["tas", "pr"], ["pr"])
+    g = torch.Generator().manual_seed(0)
+    out = torch.randn(2, 4, 6, 8, generator=g)  # tas + (logit, k, mu) for pr
+    point = hurdle_point_output(out, layout)
+    assert point.shape == (2, 2, 6, 8)
+    assert torch.allclose(point[:, 0], out[:, 0])
+    assert torch.allclose(point[:, 1], torch.sigmoid(out[:, 1]) * out[:, 3])

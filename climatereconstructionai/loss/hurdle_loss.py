@@ -4,13 +4,13 @@ from torch import nn
 
 from .. import config as cfg
 from ..model.heads import hurdle_output_layout
-from ..utils.normalizer import is_precip_data_type
+from ..utils.normalizer import is_precip_data_type, target_data_types
 
 
 def hurdle_channel_map():
     # maps each hurdle target channel to its 3 output channels
     # (occurrence logit, gamma shape, conditional mean)
-    target_types = cfg.data_types[-cfg.out_channels:]
+    target_types = target_data_types()
     hurdle_types = getattr(cfg, "hurdle_data_types", None) or []
     return {
         c: start
@@ -19,11 +19,11 @@ def hurdle_channel_map():
     }, target_types
 
 
-def denormalize_target(gt_ch, target_idx, target_type, train_stats):
+def denormalize_target(gt_ch, target_idx, target_type, n_targets, train_stats):
     # the dataloader applies log1p (precip types) + z-normalization; the
     # hurdle-gamma distribution is defined on the raw variable
     if train_stats is not None:
-        idx = len(cfg.data_types) - cfg.out_channels + target_idx
+        idx = len(cfg.data_types) - n_targets + target_idx
         gt_ch = gt_ch * train_stats["std"][idx] + train_stats["mean"][idx]
         if is_precip_data_type(target_type):
             gt_ch = torch.expm1(gt_ch)
@@ -56,7 +56,7 @@ class HurdleGammaLoss(nn.Module):
             k = torch.unsqueeze(output[:, start + 1, :, :], dim=1)
             mu = torch.unsqueeze(output[:, start + 2, :, :], dim=1)
             gt_ch = torch.unsqueeze(gt[:, channel, :, :], dim=1)
-            gt_ch = denormalize_target(gt_ch, channel, target_types[channel], self.train_stats)
+            gt_ch = denormalize_target(gt_ch, channel, target_types[channel], len(target_types), self.train_stats)
             mask_ch = torch.unsqueeze(mask[:, channel, :, :], dim=1)
             wet = (gt_ch > thr).float()
 
@@ -103,7 +103,7 @@ class HurdleGammaLossValid(nn.Module):
             k = torch.unsqueeze(output[:, start + 1, :, :], dim=1)
             mu = torch.unsqueeze(output[:, start + 2, :, :], dim=1)
             gt_ch = torch.unsqueeze(gt[:, channel, :, :], dim=1)
-            gt_ch = denormalize_target(gt_ch, channel, target_types[channel], self.train_stats)
+            gt_ch = denormalize_target(gt_ch, channel, target_types[channel], len(target_types), self.train_stats)
             mask_ch = torch.unsqueeze(mask[:, channel, :, :], dim=1)
             wet = (gt_ch > thr).float()
 
