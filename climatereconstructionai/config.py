@@ -140,6 +140,24 @@ def set_lambdas():
         lambda_dict["prc"] = 0.05
         lambda_dict["style"] = 120.0
 
+    elif loss_criterion == 13:
+        # hurdle-gamma distributional head on the hole region
+        # (requires --hurdle-data-types)
+        lambda_dict["valid"] = 1.0
+        lambda_dict["hurdle_gamma"] = 6.0
+        lambda_dict["tv"] = 0.1
+        lambda_dict["prc"] = 0.05
+        lambda_dict["style"] = 120.0
+
+    elif loss_criterion == 14:
+        # hurdle-gamma distributional head on the valid region
+        # (requires --hurdle-data-types)
+        lambda_dict["valid"] = 1.0
+        lambda_dict["hurdle_gamma_valid"] = 6.0
+        lambda_dict["tv_valid"] = 0.1
+        lambda_dict["prc"] = 0.05
+        lambda_dict["style"] = 120.0
+
     if lambda_loss is not None:
         lambda_dict.update(lambda_loss)
 
@@ -654,7 +672,8 @@ def set_train_args(arg_file=None):
         help="Index defining the loss function "
         "(0=original from Liu et al., 1=MAE of the hole region, "
         "4=precipitation-weighted hole loss, 5/8=precipitation-weighted + Bernoulli, "
-        "9/10=two-stage Bernoulli-Gamma, 11=gamma; individual loss terms can also be "
+        "9/10=two-stage Bernoulli-Gamma, 11/12=gamma, 13/14=hurdle-gamma "
+        "distributional head; individual loss terms can also be "
         "set via --lambda-loss)",
     )
     arg_parser.add_argument(
@@ -728,6 +747,35 @@ def set_train_args(arg_file=None):
         default=None,
         help="Comma separated data type names to which the gamma/Bernoulli-Gamma "
         "loss is applied (default: all output channels)",
+    )
+    arg_parser.add_argument(
+        "--hurdle-data-types",
+        type=str_list,
+        default=None,
+        help="Comma separated target data type names that use the hurdle-gamma "
+        "distributional head (3 output channels each: occurrence logit, gamma "
+        "shape, conditional mean). Default None: disabled, each variable keeps "
+        "its single bounds-scaled output channel as before",
+    )
+    arg_parser.add_argument(
+        "--hurdle-threshold",
+        type=float,
+        default=0.1,
+        help="Raw-unit threshold above which a pixel counts as wet in the "
+        "hurdle-gamma loss",
+    )
+    arg_parser.add_argument(
+        "--hurdle-sigma-px",
+        type=float,
+        default=6.0,
+        help="Decorrelation length in pixels of the correlated Gaussian noise "
+        "used for spatially coherent sampling from the hurdle-gamma head",
+    )
+    arg_parser.add_argument(
+        "--n-ensemble-members",
+        type=int,
+        default=1,
+        help="Number of ensemble members drawn with the copula sampler",
     )
     arg_parser.add_argument(
         "--val-metrics",
