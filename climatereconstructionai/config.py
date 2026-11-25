@@ -219,6 +219,15 @@ def global_args(parser, arg_file=None, prog_func=None):
 
     n_recurrent_steps = sum(time_steps) + 1
 
+    global time_pooling_channel_modes
+    if time_pooling_channel_modes is not None:
+        assert time_pooling != "none", (
+            "--time-pooling-channel-modes requires --time-pooling"
+        )
+        time_pooling_channel_modes = [
+            m.strip() for m in time_pooling_channel_modes.split(",") if m.strip()
+        ]
+
     if time_pooling != "none":
         assert target_aggregation != "none", (
             "--time-pooling requires --target-aggregation (daily target indexing)"
@@ -441,12 +450,26 @@ def set_common_args():
     )
     arg_parser.add_argument(
         "--time-pooling",
-        choices=("none", "mean", "last", "sum", "attention"),
+        choices=("none", "mean", "last", "sum", "attention", "attention_sum"),
         default="none",
         help="Collapse the input time window to a single (aggregated, e.g. "
         "daily) output field inside the model, instead of producing one output "
-        "per input step. 'attention' learns per-step weights. Requires "
-        "--target-aggregation and --lstm-steps/--gru-steps. Default 'none'",
+        "per input step. 'attention' learns per-step, per-channel, per-pixel "
+        "weights (softmax over time); 'attention_sum' uses positive "
+        "unnormalized weights so accumulated variables are not forced to a "
+        "mean. Requires --target-aggregation and "
+        "--lstm-steps/--gru-steps. Default 'none'",
+    )
+    arg_parser.add_argument(
+        "--time-pooling-channel-modes",
+        type=str,
+        default=None,
+        help="Comma-separated per-channel pooling modes aligned with the input "
+        "channels of the first encoder level, e.g. "
+        "'attention,attention_sum' for a mean-like and an accumulated "
+        "variable; tiled to the feature channels of the deeper levels. "
+        "Entries: mean, sum, last, attention, attention_sum. "
+        "Requires --time-pooling",
     )
     arg_parser.add_argument(
         "--target-time-offset",

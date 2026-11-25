@@ -156,7 +156,23 @@ class CRAINet(nn.Module):
         # single (daily) output field directly inside the model
         self.time_pooling = getattr(cfg, "time_pooling", "none")
         if self.time_pooling != "none":
-            self.time_pool = TimePooling(self.time_pooling)
+            channel_modes = getattr(cfg, "time_pooling_channel_modes", None)
+            level_channels = [enc_conv_configs[0]["in_channels"]] + [
+                enc_conv_configs[i]["out_channels"] for i in range(self.net_depth)
+            ]
+            if channel_modes is not None:
+                assert len(channel_modes) == level_channels[0], (
+                    "--time-pooling-channel-modes must have one entry per input "
+                    f"channel ({level_channels[0]}), got {len(channel_modes)}"
+                )
+            self.time_pools = nn.ModuleList()
+            for c in level_channels:
+                modes = None
+                if channel_modes is not None:
+                    modes = (list(channel_modes) * (c // len(channel_modes) + 1))[:c]
+                self.time_pools.append(
+                    TimePooling(c, mode=self.time_pooling, channel_modes=modes)
+                )
 
         # optional graph convolution (GNN) layers at the bottleneck
         self.gnn_layers = getattr(cfg, "gnn_layers", 0)
@@ -273,8 +289,21 @@ class CRAINet(nn.Module):
         # collapse the time window to a single output field (e.g. daily)
         if self.time_pooling != "none" and cfg.recurrent_steps:
             for i in range(len(hs)):
-                hs[i] = self.time_pool(hs[i])
+                w = self.time_pools[i].weights(hs[i])
+                hs[i] = (hs[i] * w).sum(dim=1, keepdim=True)
                 hs_mask[i] = hs_mask[i].mean(dim=1, keepdim=True)
+                # pool the recurrent state of the matching encoder level with
+                # the same weights so the decoder state is not biased toward
+                # the last time step (skipped for fusion-concatenated states,
+                # whose channel count exceeds the level's skip channels)
+                if i > 0 and recurrent_states[i - 1] is not None:
+                    state = recurrent_states[i - 1]
+                    states = state if isinstance(state, tuple) else (state,)
+                    if all(s.shape[1:] == w.shape[2:] for s in states):
+                        pooled = tuple((s.unsqueeze(1) * w).sum(dim=1) for s in states)
+                        recurrent_states[i - 1] = (
+                            pooled if isinstance(state, tuple) else pooled[0]
+                        )
 
         h, h_mask = hs[self.net_depth], hs_mask[self.net_depth]
 
