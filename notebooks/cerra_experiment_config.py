@@ -209,6 +209,165 @@ CONFIGS = {
             "loss_criterion": 8, 
             "attention":True},
     },
+    # ---- sub-daily (3h input, DAILY target) with distributional losses ----
+    # two variants per variable:
+    #   -hurdle : hurdle-gamma head on the target (loss-criterion 14 = hurdle on
+    #             the valid region + --hurdle-data-types <short name>); the
+    #             head predicts (occurrence logit, gamma shape, mean) and the
+    #             copula sampler (--n-ensemble-members, --hurdle-sigma-px) draws
+    #             spatially coherent ensemble members at eval
+    #   -bg     : standard Bernoulli-Gamma (loss-criterion 10, valid region)
+    # NOTE: hurdle_data_types / gamma_data_types take the CERRA SHORT name
+    # (last entry of --data-types), not the folder key. With the hurdle head,
+    # time_pooling must stay on so the time axis is collapsed inside the model
+    # (T=1); do not combine with --target-aggregation sum over multiple steps
+    # or with the scalar losses (valid/tv/prc/style/hole), which iterate over
+    # output channels and would misalign with the 3-channel hurdle output.
+    "tp-all_var-3h-daily-hurdle": {
+        "input_vars": ["tp", "t2m", "relative_humidity", "surface_pressure", "u", "v"],
+        "static_vars": ["orography"],
+        "target": "tp",
+        "input_template": f"input_{subdaily_res}",
+        "daily_input_vars": ["tp"],   # tp exists only daily -> daily input file
+        "model": {"lr": 5e-5,
+                  "conv_factor": 512,
+                  "precip_log_transform": True,   # loader log1p+z-norm; hurdle loss denormalizes
+                  "loss_criterion": 14,           # hurdle_gamma on the valid region
+                  "lambda_loss": None,            # drop the default style term: scalar per-channel
+                                                  # losses misalign with the 3-channel hurdle output
+                  "hurdle_data_types": "tp",      # short name of the target
+                  "hurdle_threshold": 0.1,        # raw units (mm)
+                  "hurdle_sigma_px": 6,           # copula decorrelation length (fit from variogram later)
+                  "n_ensemble_members": 10,       # eval-time ensemble size
+                  "lstm_steps": [7, 0],           # trailing window: previous 8 steps
+                  "target_aggregation": "sum",
+                  "target_time_offset": 2,
+                  "time_pooling": "attention",    # daily total from the window (T -> 1)
+                  },
+    },
+    "tp-all_var-3h-daily-bg": {
+        "input_vars": ["tp", "t2m", "relative_humidity", "surface_pressure", "u", "v"],
+        "static_vars": ["orography"],
+        "target": "tp",
+        "input_template": f"input_{subdaily_res}",
+        "daily_input_vars": ["tp"],
+        "model": {"lr": 5e-5,
+                  "conv_factor": 512,
+                  "precip_log_transform": True,
+                  "loss_criterion": 10,           # Bernoulli-Gamma on the valid region
+                  "gamma_data_types": "tp",
+                  "lstm_steps": [7, 0],
+                  "target_aggregation": "sum",
+                  "target_time_offset": 2,
+                  "time_pooling": "attention",
+                  },
+    },
+    "t2m-all_var-3h-daily-hurdle": {
+        "input_vars": ["t2m", "dewpoint", "surface_pressure", "u", "v"],
+        "static_vars": ["orography"],
+        "target": "t2m",
+        "input_template": f"input_{subdaily_res}",
+        "model": {"lr": 5e-5,
+                  "conv_factor": 512,
+                  "loss_criterion": 14,
+                  "lambda_loss": None,            # drop the default style term (see tp-hurdle)
+                  "hurdle_data_types": "2t",
+                  "hurdle_threshold": 0.0,        # temperature (K) is always > 0
+                  "hurdle_sigma_px": 6,
+                  "n_ensemble_members": 10,
+                  "lstm_steps": [7, 0],
+                  "target_aggregation": "mean",
+                  "target_time_offset": 2,
+                  "time_pooling": "mean",
+                  },
+    },
+    "t2m-all_var-3h-daily-bg": {
+        "input_vars": ["t2m", "dewpoint", "surface_pressure", "u", "v"],
+        "static_vars": ["orography"],
+        "target": "t2m",
+        "input_template": f"input_{subdaily_res}",
+        "model": {"lr": 5e-5,
+                  "conv_factor": 512,
+                  "loss_criterion": 10,
+                  "gamma_data_types": "2t",
+                  "lstm_steps": [7, 0],
+                  "target_aggregation": "mean",
+                  "target_time_offset": 2,
+                  "time_pooling": "mean",
+                  },
+    },
+    "dewpoint-all_var-3h-daily-hurdle": {
+        "input_vars": ["dewpoint", "t2m", "surface_pressure", "u", "v"],
+        "static_vars": ["orography"],
+        "target": "dewpoint",
+        "input_template": f"input_{subdaily_res}",
+        "model": {"lr": 5e-5,
+                  "conv_factor": 512,
+                  "loss_criterion": 14,
+                  "lambda_loss": None,            # drop the default style term (see tp-hurdle)
+                  "hurdle_data_types": "dewpoint",
+                  "hurdle_threshold": 0.0,
+                  "hurdle_sigma_px": 6,
+                  "n_ensemble_members": 10,
+                  "lstm_steps": [7, 0],
+                  "target_aggregation": "mean",
+                  "target_time_offset": 2,
+                  "time_pooling": "mean",
+                  },
+    },
+    "dewpoint-all_var-3h-daily-bg": {
+        "input_vars": ["dewpoint", "t2m", "surface_pressure", "u", "v"],
+        "static_vars": ["orography"],
+        "target": "dewpoint",
+        "input_template": f"input_{subdaily_res}",
+        "model": {"lr": 5e-5,
+                  "conv_factor": 512,
+                  "loss_criterion": 10,
+                  "gamma_data_types": "dewpoint",
+                  "lstm_steps": [7, 0],
+                  "target_aggregation": "mean",
+                  "target_time_offset": 2,
+                  "time_pooling": "mean",
+                  },
+    },
+    # rzwc = root-zone water content (state variable, non-negative -> hurdle
+    # applies naturally; daily mean, not a sum)
+    "rzwc-all_var-3h-daily-hurdle": {
+        "input_vars": ["rzwc", "tp", "t2m", "relative_humidity", "surface_pressure", "u", "v"],
+        "static_vars": ["orography"],
+        "target": "rzwc",
+        "input_template": f"input_{subdaily_res}",
+        "daily_input_vars": ["rzwc", "tp"],   # state + flux exist only daily
+        "model": {"lr": 5e-5,
+                  "conv_factor": 512,
+                  "loss_criterion": 14,
+                  "lambda_loss": None,            # drop the default style term (see tp-hurdle)
+                  "hurdle_data_types": "rzwc",
+                  "hurdle_threshold": 0.0,
+                  "hurdle_sigma_px": 6,
+                  "n_ensemble_members": 10,
+                  "lstm_steps": [7, 0],
+                  "target_aggregation": "mean",
+                  "target_time_offset": 0,
+                  "time_pooling": "mean",
+                  },
+    },
+    "rzwc-all_var-3h-daily-bg": {
+        "input_vars": ["rzwc", "tp", "t2m", "relative_humidity", "surface_pressure", "u", "v"],
+        "static_vars": ["orography"],
+        "target": "rzwc",
+        "input_template": f"input_{subdaily_res}",
+        "daily_input_vars": ["rzwc", "tp"],
+        "model": {"lr": 5e-5,
+                  "conv_factor": 512,
+                  "loss_criterion": 10,
+                  "gamma_data_types": "rzwc",
+                  "lstm_steps": [7, 0],
+                  "target_aggregation": "mean",
+                  "target_time_offset": 0,
+                  "time_pooling": "mean",
+                  },
+    },
     # t2m + drivers
     "t2m-all_var": {
         "target": "t2m",
@@ -354,7 +513,7 @@ NC_TPL[f"input_{subdaily_res}"] = (
 NC_TPL[f"mask_{subdaily_res}"] = (
     "{mask_folder}/cerra_{subdaily_sfx}_{var}_{year}{reg_sfx}_filled_mask.nc"
 )
-NC_TPL[f"mask_test_{subdaily_res}"] = NC_TPL[f"mask_sub_{subdaily_res}"]
+NC_TPL[f"mask_test_{subdaily_res}"] = NC_TPL[f"mask_{subdaily_res}"]
 JSON_TPL[f"input_{subdaily_res}"] = (
     "cerra_{subdaily_sfx}_{var}{reg_sfx}{descriptor}_{split}.json"
 )
@@ -387,6 +546,7 @@ BASE = dict(
     data_root=data_root,
     mask_folder=mask_folder,
     mask_folder_test=mask_folder_test,
+    subdaily_sfx=subdaily_sfx,
     reg=reg,
     reg_sfx=reg_sfx,
     other_sfx=other_sfx,
@@ -440,8 +600,11 @@ var_names = {
     "wind_direction":    "10wdir",
     "tciwv":             "tciwv",
     "u":                 "u",
-    "v:":                "v",
-    "dewpoint":          "dewpoint"
+    "v":                 "v",
+    "dewpoint":          "dewpoint",
+    # root-zone water content: adjust the short name if the files use another
+    # cdo name than "rzwc"
+    "rzwc":              "rzwc",
 }
 
 
@@ -800,6 +963,10 @@ def model_block(m, for_eval=False):
     """
     lines = []
     for key, val in m.items():
+        if val is None:
+            # None drops the flag entirely (argparse default applies), so a
+            # config can remove a MODEL_DEFAULTS entry it does not want
+            continue
         flag = "--" + key.replace("_", "-")
         if key in ("encoding_layers", "pooling_layers"):
             nums = val if isinstance(val, (list, tuple)) else str(val).split(",")
