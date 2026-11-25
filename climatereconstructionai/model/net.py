@@ -169,7 +169,18 @@ class CRAINet(nn.Module):
                 ]
             )
 
-        self.binder = constrain_bounds(bounds)
+        data_types = getattr(cfg, "data_types", None)
+        n_target_data = getattr(cfg, "n_target_data", 0)
+        if data_types is not None:
+            if n_target_data > 0:
+                target_types = data_types[-n_target_data:]
+            else:
+                target_types = data_types[: getattr(cfg, "out_channels", len(bounds))]
+            if len(target_types) != len(bounds):
+                target_types = None
+        else:
+            target_types = None
+        self.binder = constrain_bounds(bounds, target_types=target_types)
 
     def forward(self, input, input_mask):
         # create lists for skip connections
