@@ -10,6 +10,7 @@ from .conv_configs import (
 )
 from .encoder_decoder import EncoderBlock, DecoderBlock, sequence_to_batch, batch_to_sequence
 from .bounds_scaler import constrain_bounds
+from .heads import HurdleGammaHead, hurdle_output_layout
 from .graph_conv_module import GraphConvBlock
 from .time_pooling import TimePooling
 from .. import config as cfg
@@ -171,7 +172,47 @@ class CRAINet(nn.Module):
 
         self.binder = constrain_bounds(bounds)
 
-    def forward(self, input, input_mask):
+        # optional distributional head for selected target variables; when
+        # disabled (default) the output is a single bounds-scaled channel per
+        # variable, exactly as before
+        data_types = getattr(cfg, "data_types", None)
+        target_types = data_types[-out_channels:] if data_types else []
+        self.hurdle_types = [
+            t for t in (getattr(cfg, "hurdle_data_types", None) or []) if t in target_types
+        ]
+        if self.hurdle_types:
+            self.hurdle_layout = hurdle_output_layout(target_types, self.hurdle_types)
+            self.hurdle_head = HurdleGammaHead(
+                dec_conv_configs[self.net_depth - 1]["out_channels"], len(self.hurdle_types)
+            )
+        else:
+            self.hurdle_layout = None
+            self.hurdle_head = None
+
+    def _apply_hurdle_head(self, h, coarse_up=None):
+        # h: (B, T, C, H, W) decoder output with C == out_channels; returns
+        # (B, T, C_out, H, W) where each hurdle variable occupies 3 channels
+        # (occurrence logit, gamma shape, conditional mean) and plain
+        # variables keep their bounds-scaled channel
+        b, t, c, hh, ww = h.shape
+        n_out_total = self.hurdle_layout[-1][2] + self.hurdle_layout[-1][3]
+        out = h.new_zeros(b, t, n_out_total, hh, ww)
+        for target_idx, is_hurdle, out_start, n_out in self.hurdle_layout:
+            if not is_hurdle:
+                ch = h[:, :, target_idx:target_idx + 1]
+                ch = self.binder.binders[target_idx](ch, *self.binder.params[target_idx])
+                out[:, :, out_start:out_start + 1] = ch
+        x = h.reshape(b * t, c, hh, ww)
+        logit_p, k, mu = self.hurdle_head(x, coarse_up=coarse_up)
+        j = 0
+        for target_idx, is_hurdle, out_start, n_out in self.hurdle_layout:
+            if is_hurdle:
+                triple = torch.cat([logit_p[:, j:j + 1], k[:, j:j + 1], mu[:, j:j + 1]], dim=1)
+                out[:, :, out_start:out_start + 3] = triple.reshape(b, t, 3, hh, ww)
+                j += 1
+        return out
+
+    def forward(self, input, input_mask, coarse_up=None):
         # create lists for skip connections
         # We split the inputs in case we use the attention module with different image dimension
         h_index = cfg.n_channel_steps
@@ -307,7 +348,10 @@ class CRAINet(nn.Module):
                     None,
                 )
 
-        h = self.binder.scale(h)
+        if self.hurdle_head is not None:
+            h = self._apply_hurdle_head(h, coarse_up=coarse_up)
+        else:
+            h = self.binder.scale(h)
 
         # return last element of output from last decoding layer
         return h
