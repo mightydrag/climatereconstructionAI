@@ -37,13 +37,15 @@ reg_sfx = f"_{reg}" if reg else ""
 other = "remapcon_land"
 other_sfx = f"_{other}" if other else ""
 res = "2deg"
-res_sfx = f"_{res}" if other else ""
+high_res = "01deg"
+res_sfx = f"_{res}" if res else ""
+high_res_sfx = f"_{high_res}" if high_res else ""
 
 # sub-daily (e.g. 3-hourly) input resolution for --target-aggregation runs;
 # the sub-daily template keys (input_3h, mask_3h, ...) are derived from it
 subdaily_res = "3h"
 subdaily_sfx = f"_{subdaily_res}"
-descriptor = "_lowres_values_filled_highres_grid"    # "" = no suffix in file/JSON names
+descriptor = f"_lowres_values{res_sfx}_filled_highres_grid"    # "" = no suffix in file/JSON names
 
 # year of the single static files, e.g. orography/lsm stored as ..._2005.nc
 static_year = 2005
@@ -475,24 +477,23 @@ force_rewrite = False
 #
 #     Placeholders usable in NC_TPL / JSON_TPL (filled via BASE):
 #       {data_root} {mask_folder} {mask_folder_test} {var} {year}
-#       {reg} {reg_sfx} {other_sfx} {res_sfx} {descriptor} {static_year}
-#       {steady_mask_year} {key} {split}
+#       {reg} {reg_sfx} {other_sfx} {res_sfx} {high_res_sfx} {descriptor}
+#       {static_year} {steady_mask_year} {key} {split}
 #     ANY of these may be used in ANY NC_TPL / JSON_TPL entry --
 #     BASE supplies them all to every .format() call ({key} = the CONFIGS
 #     key of the current experiment is passed per call, not via BASE).
 # =========================================================
 NC_TPL = {
-    "input":       "{data_root}/{var}/cerra_dm_{var}_{year}{reg_sfx}{descriptor}{res_sfx}.nc",
-    "target":      "{data_root}/{var}/cerra_dm_{var}_{year}{other_sfx}{reg_sfx}.nc",
-    "static":      "{data_root}/{var}/cerra_dm_{var}_{static_year}{other_sfx}{reg_sfx}.nc",
+    "input":       "{data_root}/{var}/cerra_dm_{var}_{year}{reg_sfx}{descriptor}{high_res_sfx}.nc",
+    "target":      "{data_root}/{var}/cerra_dm_{var}_{year}{other_sfx}{reg_sfx}{high_res_sfx}.nc",
+    "static":      "{data_root}/{var}/cerra_dm_{var}_{static_year}{other_sfx}{reg_sfx}{high_res_sfx}.nc",
     "mask":        "{mask_folder}/cerra_dm_{var}_{year}{reg_sfx}_filled_mask.nc",
     "mask_static": "{mask_folder}/cerra_dm_{var}_{static_year}{reg_sfx}_filled_mask.nc",
     # same layout as "mask", but listed separately so the test-split masks
     # can point at a different folder if ever needed:
     # swap {mask_folder} -> {mask_folder_test} here to use the test masks
     "mask_test":   "{mask_folder}/cerra_dm_{var}_{year}{reg_sfx}_filled_mask.nc",
-    #"steady_mask": "{data_root}/{var}/cerra_mask_{var}_{steady_mask_year}{reg_sfx}_steady_mask.nc",
-    "steady_mask": "{data_root}/{var}/cerra_mask_{var}{other_sfx}{reg_sfx}.nc",
+    "steady_mask": "{data_root}/mask/cerra_dm_{var}{reg_sfx}_steady_mask{high_res_sfx}.nc",
 }
 
 JSON_TPL = {
@@ -508,7 +509,7 @@ JSON_TPL = {
 # sub-daily input/mask templates for the chosen resolution (e.g. _3h files);
 # adjust the patterns to the actual sub-daily CERRA file names
 NC_TPL[f"input_{subdaily_res}"] = (
-    "{data_root}/{var}/cerra_{subdaily_sfx}_{var}_{year}{reg_sfx}{descriptor}{res_sfx}.nc"
+    "{data_root}/{var}/cerra_{subdaily_sfx}_{var}_{year}{reg_sfx}{descriptor}{high_res_sfx}.nc"
 )
 NC_TPL[f"mask_{subdaily_res}"] = (
     "{mask_folder}/cerra_{subdaily_sfx}_{var}_{year}{reg_sfx}_filled_mask.nc"
@@ -551,6 +552,7 @@ BASE = dict(
     reg_sfx=reg_sfx,
     other_sfx=other_sfx,
     res_sfx=res_sfx,
+    high_res_sfx=high_res_sfx,
     descriptor=descriptor,
     static_year=static_year,
     steady_mask_year=steady_mask_year,
@@ -558,9 +560,10 @@ BASE = dict(
 )
 
 # evaluate-run templates: DERIVED from NC_TPL (defined after BASE!).
-# {var} / {year} / {reg} stay LITERAL for the slurm scripts; every other
-# placeholder ({data_root}, {descriptor}, {res_sfx}, {static_year}, ...)
-# is filled in here from BASE.
+# {var} / {year} / {reg} stay LITERAL for the slurm scripts (they substitute
+# only those three); every other placeholder ({data_root}, {descriptor},
+# {res_sfx}, {high_res_sfx}, {static_year}, ...) is filled in here from BASE,
+# so the eval config carries e.g. a concrete _01deg suffix.
 
 
 def eval_tpl(nc_key):
