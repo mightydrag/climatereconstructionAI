@@ -186,13 +186,24 @@ class CRAINet(nn.Module):
                 ]
             )
 
-        self.binder = constrain_bounds(bounds)
-
         # optional distributional head for selected target variables; when
         # disabled (default) the output is a single bounds-scaled channel per
         # variable, exactly as before
         data_types = getattr(cfg, "data_types", None)
-        target_types = data_types[-out_channels:] if data_types else []
+        n_target_data = getattr(cfg, "n_target_data", 0)
+        if data_types is not None:
+            if n_target_data > 0:
+                target_types = list(data_types[-n_target_data:])
+            else:
+                target_types = list(
+                    data_types[: getattr(cfg, "out_channels", len(bounds))]
+                )
+        else:
+            target_types = []
+        if len(target_types) == len(bounds):
+            self.binder = constrain_bounds(bounds, target_types=target_types)
+        else:
+            self.binder = constrain_bounds(bounds)
         self.hurdle_types = [
             t for t in (getattr(cfg, "hurdle_data_types", None) or []) if t in target_types
         ]
@@ -213,11 +224,21 @@ class CRAINet(nn.Module):
         b, t, c, hh, ww = h.shape
         n_out_total = self.hurdle_layout[-1][2] + self.hurdle_layout[-1][3]
         out = h.new_zeros(b, t, n_out_total, hh, ww)
+        plain_channels = {}
         for target_idx, is_hurdle, out_start, n_out in self.hurdle_layout:
             if not is_hurdle:
                 ch = h[:, :, target_idx:target_idx + 1]
                 ch = self.binder.binders[target_idx](ch, *self.binder.params[target_idx])
-                out[:, :, out_start:out_start + 1] = ch
+                plain_channels[target_idx] = (out_start, ch)
+        for td_idx, t_idx in self.binder.td_t_pairs:
+            if td_idx in plain_channels and t_idx in plain_channels:
+                out_start, ch = plain_channels[td_idx]
+                plain_channels[td_idx] = (
+                    out_start,
+                    torch.minimum(ch, plain_channels[t_idx][1]),
+                )
+        for target_idx, (out_start, ch) in plain_channels.items():
+            out[:, :, out_start:out_start + 1] = ch
         x = h.reshape(b * t, c, hh, ww)
         logit_p, k, mu = self.hurdle_head(x, coarse_up=coarse_up)
         j = 0
