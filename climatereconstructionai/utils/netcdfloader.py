@@ -76,6 +76,26 @@ class FiniteSampler(Sampler):
         return self.num_samples
 
 
+def _input_month_mask(time_coord, input_months, basename):
+    try:
+        months = np.asarray(time_coord.dt.month)
+    except (AttributeError, TypeError, ValueError):
+        try:
+            decoded = xr.decode_cf(time_coord.to_dataset(name="time"))["time"]
+            months = np.asarray(decoded.dt.month)
+        except Exception:
+            raise ValueError(
+                "--input-months requires a decodable calendar 'time' coordinate "
+                "in {}, but its values could not be decoded.".format(basename)
+            )
+    mask = np.isin(months, list(input_months))
+    if not mask.any():
+        raise ValueError(
+            "No time steps with months {} found in {}.".format(input_months, basename)
+        )
+    return mask
+
+
 def nc_loadchecker(filename, data_type):
     basename = filename.split("/")[-1]
 
@@ -100,6 +120,15 @@ def nc_loadchecker(filename, data_type):
         ds = ds.drop_dims("bnds")
 
     ds1 = dataset_formatter(ds, data_type, basename)
+
+    input_months = getattr(cfg, "input_months", None)
+    if input_months is not None:
+        if "time" not in ds1.dims:
+            raise ValueError(
+                "--input-months requires a 'time' dimension in {}.".format(basename)
+            )
+        ds1 = ds1.isel(time=_input_month_mask(ds1["time"], input_months, basename))
+
     ds = ds.drop_vars(data_type)
 
     if cfg.lazy_load:
