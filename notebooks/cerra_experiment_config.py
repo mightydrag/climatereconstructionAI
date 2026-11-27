@@ -32,9 +32,12 @@ even when their content is unchanged.
 ml_path = "/work/uo1075/u244085/trees_in_the_city/ML_downscaling/Physics-Informed-CNN-Reconstructions"
 data_root = "/work/uo1075/u244085/cerra_data"
 
+# reg / other are the DEFAULTS -- each CONFIGS entry may override them with
+# its own "reg" / "other" (and per-variable "other_vars", e.g. the rzwc files
+# carry a different remap suffix than the other variables)
 reg = "ger"
 reg_sfx = f"_{reg}" if reg else ""
-other = "remapcon_land"
+other = "remapcon_land_thr0.5"
 other_sfx = f"_{other}" if other else ""
 res = "2deg"
 high_res = "01deg"
@@ -70,6 +73,9 @@ splits = {
 #      must be a valid var_names key AND the name of the data folder
 #    - "static_vars" defaults to [] if omitted
 #    - "model" (optional) overrides MODEL_DEFAULTS for this config
+#    - "reg" / "other" (optional) override the section-1 region / processing
+#      suffix for this experiment; "other_vars": {var: other, ...} overrides
+#      the "other" suffix per variable (e.g. "rzwc": "remapcon_s1bil_land_thr.05")
 # =========================================================
 CONFIGS = {
     # original multi-variable experiment
@@ -338,6 +344,7 @@ CONFIGS = {
         "input_vars": ["rzwc", "tp", "t2m", "relative_humidity", "surface_pressure", "u", "v"],
         "static_vars": ["orography"],
         "target": "rzwc",
+        "other_vars": {"rzwc": "remapcon_s1bil_land_thr.05"},   # rzwc files carry a different remap suffix
         "input_template": f"input_{subdaily_res}",
         "daily_input_vars": ["rzwc", "tp"],   # state + flux exist only daily
         "model": {"lr": 5e-5,
@@ -358,6 +365,7 @@ CONFIGS = {
         "input_vars": ["rzwc", "tp", "t2m", "relative_humidity", "surface_pressure", "u", "v"],
         "static_vars": ["orography"],
         "target": "rzwc",
+        "other_vars": {"rzwc": "remapcon_s1bil_land_thr.05"},   # rzwc files carry a different remap suffix
         "input_template": f"input_{subdaily_res}",
         "daily_input_vars": ["rzwc", "tp"],
         "model": {"lr": 5e-5,
@@ -475,7 +483,8 @@ force_rewrite = False
 # =========================================================
 # 2b. FILE-NAME LAYOUT -- change the base layout HERE ONLY
 #
-#     Placeholders usable in NC_TPL / JSON_TPL (filled via BASE):
+#     Placeholders usable in NC_TPL / JSON_TPL (filled via the per-experiment
+#     context cfg_context(): BASE + the config's "reg"/"other"/"other_vars"):
 #       {data_root} {mask_folder} {mask_folder_test} {var} {year}
 #       {reg} {reg_sfx} {other_sfx} {res_sfx} {high_res_sfx} {descriptor}
 #       {static_year} {steady_mask_year} {key} {split}
@@ -559,20 +568,67 @@ BASE = dict(
     selected=selected,
 )
 
-# evaluate-run templates: DERIVED from NC_TPL (defined after BASE!).
+
+def _sfx(s):
+    return f"_{s}" if s else ""
+
+
+def cfg_reg(cfg):
+    """Region of one experiment: the config's "reg" if set, else the global one."""
+    return (cfg or {}).get("reg", reg)
+
+
+def cfg_other(cfg, var=None):
+    """Processing suffix ("other") of one experiment: the config's
+    "other_vars"[var] if that variable has a per-variable override, else the
+    config's "other", else the global one."""
+    cfg = cfg or {}
+    if var is not None and var in (cfg.get("other_vars") or {}):
+        return cfg["other_vars"][var]
+    return cfg.get("other", other)
+
+
+def cfg_context(cfg):
+    """BASE for one experiment: the global placeholders with the config's
+    "reg"/"other" overrides applied. Per-variable "other_vars" overrides are
+    applied per format call (see fmt_tpl)."""
+    ctx = dict(BASE)
+    ctx["reg"] = cfg_reg(cfg)
+    ctx["reg_sfx"] = _sfx(ctx["reg"])
+    ctx["other_sfx"] = _sfx(cfg_other(cfg))
+    return ctx
+
+
+def fmt_tpl(tpl, ctx, cfg, **kw):
+    """Format a template with a per-experiment context; when a var is passed,
+    its other_sfx honors the config's "other_vars" override."""
+    if kw.get("var") is not None:
+        kw = dict(kw, other_sfx=_sfx(cfg_other(cfg, kw["var"])))
+    args = dict(ctx)
+    args.update(kw)
+    return tpl.format(**args)
+
+
+# evaluate-run templates: DERIVED from NC_TPL for one experiment's context
+# (cfg_context; defined after BASE!).
 # {var} / {year} / {reg} stay LITERAL for the slurm scripts (they substitute
 # only those three); every other placeholder ({data_root}, {descriptor},
-# {res_sfx}, {high_res_sfx}, {static_year}, ...) is filled in here from BASE,
+# {res_sfx}, {high_res_sfx}, {static_year}, ...) is filled in from the context,
 # so the eval config carries e.g. a concrete _01deg suffix.
 
 
-def eval_tpl(nc_key):
+def eval_tpl(nc_key, ctx, other_sfx=None):
+    """Eval template from an NC_TPL entry for one experiment's context ctx;
+    other_sfx overrides the (target) variable's own suffix ("other_vars")."""
+    c = dict(ctx)
+    if other_sfx is not None:
+        c["other_sfx"] = other_sfx
     return (
         NC_TPL[nc_key]
         .replace("{var}", "{{var}}")
         .replace("{year}", "{{year}}")
-        .replace("{reg_sfx}", "_{{reg}}" if reg else "")
-        .format(**BASE)
+        .replace("{reg_sfx}", "_{{reg}}" if c["reg"] else "")
+        .format(**c)
     )
 
 
@@ -584,7 +640,19 @@ _EVAL_KEYS = {  # eval flag -> NC_TPL key
     "static_mask": "mask_static",
     "steady_mask": "steady_mask",
 }
-EVAL_TPL = {flag: eval_tpl(key) for flag, key in _EVAL_KEYS.items()}
+
+
+def eval_templates(cfg, target_var=None):
+    """Eval-run templates for one experiment; the target template carries the
+    target variable's own other_sfx ("other_vars" override, e.g. rzwc)."""
+    ctx = cfg_context(cfg)
+    et = {flag: eval_tpl(key, ctx) for flag, key in _EVAL_KEYS.items()}
+    if target_var is not None:
+        et["target"] = eval_tpl("target", ctx, other_sfx=_sfx(cfg_other(cfg, target_var)))
+    return et
+
+
+EVAL_TPL = eval_templates({})
 
 
 
@@ -615,48 +683,50 @@ var_names = {
 # 3. Helpers
 # =========================================================
 def check_files(target_var, input_vars, static_vars, input_tpl="input",
-                daily_input_vars=()):
+                daily_input_vars=(), cfg=None):
     """Return list of missing files for one configuration (empty = all present)."""
+    ctx = cfg_context(cfg)
     mask_tpl, _ = _tpl_pair(input_tpl)
     missing = []
     for split, (start_year, end_year) in splits.items():
         if split == "test":
             continue  # test split: evaluated per year via file templates, no JSONs
         for year in range(start_year, end_year + 1):
-            f_tgt = NC_TPL["target"].format(**BASE, var=target_var, year=year)
+            f_tgt = fmt_tpl(NC_TPL["target"], ctx, cfg, var=target_var, year=year)
             if not os.path.isfile(f_tgt):
                 missing.append(f_tgt)
             for var in input_vars:
                 v_tpl = _input_tpl_for(var, input_tpl, daily_input_vars)
                 v_mask_tpl = "mask" if var in daily_input_vars else mask_tpl
-                f_in = NC_TPL[v_tpl].format(**BASE, var=var, year=year)
+                f_in = fmt_tpl(NC_TPL[v_tpl], ctx, cfg, var=var, year=year)
                 if not os.path.isfile(f_in):
                     missing.append(f_in)
                 # binary mask: one file per year, needed for every input var
-                f_mask = NC_TPL[v_mask_tpl].format(**BASE, var=var, year=year)
+                f_mask = fmt_tpl(NC_TPL[v_mask_tpl], ctx, cfg, var=var, year=year)
                 if not os.path.isfile(f_mask):
                     missing.append(f_mask)
 
     # static files: only one per variable needs to exist
     for var in static_vars:
-        f_st = NC_TPL["static"].format(**BASE, var=var)
+        f_st = fmt_tpl(NC_TPL["static"], ctx, cfg, var=var)
         if not os.path.isfile(f_st):
             missing.append(f_st)
 
     # steady mask: only one file, for the target variable
-    f_steady = steady_mask_file(target_var)
+    f_steady = steady_mask_file(target_var, ctx)
     if not os.path.isfile(f_steady):
         missing.append(f_steady)
     return missing
 
 
-def steady_mask_file(target_var):
-    return NC_TPL["steady_mask"].format(**BASE, var=target_var)
+def steady_mask_file(target_var, ctx=None):
+    return fmt_tpl(NC_TPL["steady_mask"], ctx or BASE, None, var=target_var)
 
 
 def write_config(target_var, input_vars, static_vars, input_tpl="input",
-                 daily_input_vars=()):
+                 daily_input_vars=(), cfg=None):
     """Write all JSON file lists for one configuration, return (flags, steady_mask_name)."""
+    ctx = cfg_context(cfg)
     mask_tpl, mask_test_tpl = _tpl_pair(input_tpl)
     flags = {}
 
@@ -669,12 +739,12 @@ def write_config(target_var, input_vars, static_vars, input_tpl="input",
         for var in input_vars:
             v_tpl = _input_tpl_for(var, input_tpl, daily_input_vars)
             file_list_in = [
-                NC_TPL[v_tpl].format(**BASE, var=var, year=year)
+                fmt_tpl(NC_TPL[v_tpl], ctx, cfg, var=var, year=year)
                 for year in years
             ]
             path = os.path.join(ml_path, "data", split, var)
             os.makedirs(path, exist_ok=True)
-            name_in = JSON_TPL[v_tpl].format(**BASE, var=var, split=split)
+            name_in = fmt_tpl(JSON_TPL[v_tpl], ctx, cfg, var=var, split=split)
             with open(os.path.join(path, name_in), "w") as f:
                 json.dump(file_list_in, f, indent=2)
             flags[split].append(f"{var}/{name_in}")
@@ -683,11 +753,11 @@ def write_config(target_var, input_vars, static_vars, input_tpl="input",
         # static variables: single file, repeated for every year so all lists
         # have the same length
         for var in static_vars:
-            f_st = NC_TPL["static"].format(**BASE, var=var)
+            f_st = fmt_tpl(NC_TPL["static"], ctx, cfg, var=var)
             file_list_st = [f_st] * n_years
             path = os.path.join(ml_path, "data", split, var)
             os.makedirs(path, exist_ok=True)
-            name_st = JSON_TPL["static"].format(**BASE, var=var, split=split)
+            name_st = fmt_tpl(JSON_TPL["static"], ctx, cfg, var=var, split=split)
             with open(os.path.join(path, name_st), "w") as f:
                 json.dump(file_list_st, f, indent=2)
             flags[split].append(f"{var}/{name_st}")
@@ -695,12 +765,12 @@ def write_config(target_var, input_vars, static_vars, input_tpl="input",
 
         # target data: native 0.05 deg field of the target variable (always LAST)
         file_list_tgt = [
-            NC_TPL["target"].format(**BASE, var=target_var, year=year)
+            fmt_tpl(NC_TPL["target"], ctx, cfg, var=target_var, year=year)
             for year in years
         ]
         path = os.path.join(ml_path, "data", split, target_var)
         os.makedirs(path, exist_ok=True)
-        name_tgt = JSON_TPL["target"].format(**BASE, var=target_var, split=split)
+        name_tgt = fmt_tpl(JSON_TPL["target"], ctx, cfg, var=target_var, split=split)
         with open(os.path.join(path, name_tgt), "w") as f:
             json.dump(file_list_tgt, f, indent=2)
         flags[split].append(f"{target_var}/{name_tgt}")
@@ -720,16 +790,16 @@ def write_config(target_var, input_vars, static_vars, input_tpl="input",
             v_mask_tpl = "mask" if var in daily_input_vars else mask_tpl
         else:
             v_mask_tpl = "mask"
-        name_mask = JSON_TPL[v_mask_tpl].format(**BASE, var=var)
+        name_mask = fmt_tpl(JSON_TPL[v_mask_tpl], ctx, cfg, var=var)
         if var in static_vars:
             # same logic as the static input files: one mask file
             # (from static_year) repeated so all lists have the same length
-            f_mask = NC_TPL["mask_static"].format(**BASE, var=var)
+            f_mask = fmt_tpl(NC_TPL["mask_static"], ctx, cfg, var=var)
             file_list_mask = [f_mask] * len(tv_years)
             print(f"mask: 1 static mask file x {len(tv_years)} -> {path}")
         else:
             file_list_mask = [
-                NC_TPL[v_mask_tpl].format(**BASE, var=var, year=year)
+                fmt_tpl(NC_TPL[v_mask_tpl], ctx, cfg, var=var, year=year)
                 for year in tv_years
             ]
         with open(os.path.join(path, name_mask), "w") as f:
@@ -748,13 +818,13 @@ def write_config(target_var, input_vars, static_vars, input_tpl="input",
             v_mask_test_tpl = "mask_test" if var in daily_input_vars else mask_test_tpl
         else:
             v_mask_test_tpl = "mask_test"
-        name_mask_test = JSON_TPL[v_mask_test_tpl].format(**BASE, var=var)
+        name_mask_test = fmt_tpl(JSON_TPL[v_mask_test_tpl], ctx, cfg, var=var)
         if var in static_vars:
-            f_mask = NC_TPL["mask_static"].format(**BASE, var=var)
+            f_mask = fmt_tpl(NC_TPL["mask_static"], ctx, cfg, var=var)
             file_list_mask_test = [f_mask] * len(test_years)
         else:
             file_list_mask_test = [
-                NC_TPL[v_mask_test_tpl].format(**BASE, var=var, year=year)
+                fmt_tpl(NC_TPL[v_mask_test_tpl], ctx, cfg, var=var, year=year)
                 for year in test_years
             ]
         with open(os.path.join(path, name_mask_test), "w") as f:
@@ -766,9 +836,9 @@ def write_config(target_var, input_vars, static_vars, input_tpl="input",
     # ---- steady mask (single file for the target channels, same folder) ----
     path = os.path.join(ml_path, "data", "masks", target_var)
     os.makedirs(path, exist_ok=True)
-    name_steady = JSON_TPL["steady_mask"].format(**BASE, key=key)
+    name_steady = fmt_tpl(JSON_TPL["steady_mask"], ctx, cfg, key=key, var=target_var)
     with open(os.path.join(path, name_steady), "w") as f:
-        json.dump([steady_mask_file(target_var)], f, indent=2)
+        json.dump([steady_mask_file(target_var, ctx)], f, indent=2)
     print(f"steady mask: 1 file -> {path}")
 
     # steady mask copy for the evaluate run: in evaluate mode --steady-masks
@@ -776,7 +846,7 @@ def write_config(target_var, input_vars, static_vars, input_tpl="input",
     path = os.path.join(ml_path, "data", "test", "masks", target_var)
     os.makedirs(path, exist_ok=True)
     with open(os.path.join(path, name_steady), "w") as f:
-        json.dump([steady_mask_file(target_var)], f, indent=2)
+        json.dump([steady_mask_file(target_var, ctx)], f, indent=2)
     print(f"steady mask (test): 1 file -> {path}")
 
     return flags, name_steady
@@ -813,7 +883,7 @@ for key, cfg in run_configs.items():
     target_var = cfg.get("target", key)
     m = check_files(target_var, cfg["input_vars"], cfg.get("static_vars", []),
                     cfg.get("input_template", "input"),
-                    cfg.get("daily_input_vars", []))
+                    cfg.get("daily_input_vars", []), cfg)
     if m:
         missing_by_config[key] = m
 
@@ -840,7 +910,7 @@ for key, cfg in run_configs.items():
     print(f"==================== config: {key} (target {target_var}) ====================")
     flags, name_steady = write_config(target_var, input_vars, static_vars,
                                       cfg.get("input_template", "input"),
-                                      cfg.get("daily_input_vars", []))
+                                      cfg.get("daily_input_vars", []), cfg)
     written[key] = {
         "cfg": cfg,
         "flags": flags,
@@ -889,8 +959,9 @@ def experiment_fingerprint(key, cfg):
         "input_vars": cfg["input_vars"],
         "static_vars": cfg.get("static_vars", []),
         "model": model_params(cfg),
-        "reg": reg,
-        "other": other,
+        "reg": cfg_reg(cfg),
+        "other": cfg_other(cfg),
+        "other_vars": cfg.get("other_vars", {}),
         "res": res,
         "descriptor": descriptor,
         "splits": {k: list(v) for k, v in splits.items()},
@@ -930,7 +1001,7 @@ def experiment_names(key, cfg):
     h = experiment_fingerprint(key, cfg)
     config_name = target_var
     run_name = (
-        f"cerra-{key}-{reg}-{res}"
+        f"cerra-{key}-{cfg_reg(cfg)}-{res}"
         f"-el{el_tag}-po{po_tag}-cf{m['conv_factor']}"
         f"-l{m['loss_criterion']}-{up_tag}-b{m['batch_size']}-{h}"
     )
@@ -1027,15 +1098,17 @@ def render_eval_config(key, entry, names):
     # sub-daily experiments evaluate on the sub-daily input/mask templates
     input_tpl = cfg.get("input_template", "input")
     mask_tpl, _ = _tpl_pair(input_tpl)
+    ctx = cfg_context(cfg)
+    et = eval_templates(cfg, entry["target_var"])
     lines = header_block(config_name, run_name)
     lines += [
-        f"--data-file-template {eval_tpl(input_tpl)}",
-        f"--static-file-template {EVAL_TPL['static']}",
-        f"--target-file-template {EVAL_TPL['target']}",
-        f"--mask-file-template {eval_tpl(mask_tpl)}",
-        f"--static-mask-template {EVAL_TPL['static_mask']}",
-        f"--steady-mask-file {EVAL_TPL['steady_mask']}",
-        f"--region {reg}",
+        f"--data-file-template {eval_tpl(input_tpl, ctx)}",
+        f"--static-file-template {et['static']}",
+        f"--target-file-template {et['target']}",
+        f"--mask-file-template {eval_tpl(mask_tpl, ctx)}",
+        f"--static-mask-template {et['static_mask']}",
+        f"--steady-mask-file {et['steady_mask']}",
+        f"--region {cfg_reg(cfg)}",
     ]
     static_vars = cfg.get("static_vars", [])
     if static_vars:
@@ -1101,7 +1174,7 @@ for key, entry in written.items():
         in_tpl = entry['cfg'].get("input_template", "input")
         print(f"NOTE [{key}]: daily_input_vars={daily_inputs} are read from the DAILY "
               f"input template, all other inputs from '{in_tpl}'. "
-              f"The eval config has a single --data-file-template ({eval_tpl(in_tpl)}); "
+              f"The eval config has a single --data-file-template ({eval_tpl(in_tpl, cfg_context(entry['cfg']))}); "
               f"make sure the eval scripts use the daily template for {daily_inputs}.")
     print()
 
