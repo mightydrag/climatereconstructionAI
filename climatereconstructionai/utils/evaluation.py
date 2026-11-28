@@ -11,7 +11,7 @@ import cartopy.feature as cfeature
 import properscoring as ps
 
 from .netcdfchecker import reformat_dataset
-from .netcdfloader import load_steadymask
+from .netcdfloader import load_steadymask, input_month_mask
 from .normalizer import renormalize, precip_log_inverse, is_precip_data_type, target_data_types
 from .sampling import sample_members
 from .plotdata import plot_data
@@ -148,6 +148,14 @@ def get_xr_dss(xr_dss_paths, data_types):
             ds = ds.isel(depth=slice(0, cfg.out_channels))
         else:
             print("No depth dimension for xrdss!")
+
+        input_months = getattr(cfg, "input_months", None)
+        if input_months is not None:
+            if "time" not in ds.dims:
+                raise ValueError(
+                    "--input-months requires a 'time' dimension in {:s}".format(path)
+                )
+            ds = ds.isel(time=input_month_mask(ds["time"], input_months, path))
         ds1 = ds.copy()
 
         # ds = ds.drop_vars(data_types[i])

@@ -76,7 +76,7 @@ class FiniteSampler(Sampler):
         return self.num_samples
 
 
-def _input_month_mask(time_coord, input_months, basename):
+def input_month_mask(time_coord, input_months, basename):
     try:
         months = np.asarray(time_coord.dt.month)
     except (AttributeError, TypeError, ValueError):
@@ -127,7 +127,7 @@ def nc_loadchecker(filename, data_type):
             raise ValueError(
                 "--input-months requires a 'time' dimension in {}.".format(basename)
             )
-        ds1 = ds1.isel(time=_input_month_mask(ds1["time"], input_months, basename))
+        ds1 = ds1.isel(time=input_month_mask(ds1["time"], input_months, basename))
 
     ds = ds.drop_vars(data_type)
 

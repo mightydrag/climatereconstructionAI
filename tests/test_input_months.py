@@ -30,6 +30,7 @@ def setup_cfg(**overrides):
     cfg.gru_steps = None
     cfg.gamma_data_types = None
     cfg.input_months = None
+    cfg.depth = None
     cfg.device = torch.device("cpu")
     for key, value in overrides.items():
         setattr(cfg, key, value)
@@ -182,3 +183,24 @@ def test_no_input_months_keeps_everything(tmp_path):
     loader = make_loader(tmp_path, None)
     assert len(loader) == 24
     assert loader[23][2][0, 0, 0, 0].item() == 23.0
+
+
+def test_input_months_filters_xrdss(tmp_path):
+    from climatereconstructionai.utils.evaluation import get_xr_dss
+
+    loader = make_loader(tmp_path, [5, 6, 7, 8, 9])
+    xrdss_path = tmp_path / "xrdss.nc"
+    write_monthly_nc(xrdss_path, "tas", np.arange(24))
+
+    xr_dss = get_xr_dss([str(xrdss_path)], ["tas"])
+    time_values = xr_dss[0][0]["time"].values
+    assert len(time_values) == 10
+    # sample indices of the filtered loader map onto the filtered time axis
+    assert len(loader) == len(time_values)
+    assert list(pd.DatetimeIndex(time_values).month) == [5, 6, 7, 8, 9] * 2
+    assert str(time_values[0])[:10] == "2000-05-01"
+    assert str(time_values[-1])[:10] == "2001-09-01"
+
+    setup_cfg()
+    xr_dss_full = get_xr_dss([str(xrdss_path)], ["tas"])
+    assert len(xr_dss_full[0][0]["time"].values) == 24
