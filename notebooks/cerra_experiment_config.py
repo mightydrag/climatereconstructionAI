@@ -443,6 +443,7 @@ MODEL_DEFAULTS = {
     "max_iter": 100000,
     "attention": False,
     "precip_log_transform": False,
+    "input_months": None,        # e.g. [5,6,7,8,9] -> --input-months 5,6,7,8,9 (May-Sep); None keeps all months
     "model_names": "best",      # eval only: which checkpoint(s) to evaluate
 }
 
