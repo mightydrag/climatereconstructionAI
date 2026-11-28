@@ -240,6 +240,14 @@ def global_args(parser, arg_file=None, prog_func=None):
             m.strip() for m in time_pooling_channel_modes.split(",") if m.strip()
         ]
 
+    global input_months
+    if input_months is not None:
+        assert all(1 <= m <= 12 for m in input_months), (
+            "--input-months entries must be calendar months in 1..12, "
+            "got {}".format(input_months)
+        )
+        input_months = sorted(set(input_months))
+
     if time_pooling != "none":
         assert target_aggregation != "none", (
             "--time-pooling requires --target-aggregation (daily target indexing)"
@@ -491,6 +499,15 @@ def set_common_args():
         "within the input files, used with --target-aggregation. Example: 2 for "
         "3-hourly inputs starting at 00 UTC when the daily target is a "
         "06UTC-06UTC accumulation",
+    )
+    arg_parser.add_argument(
+        "--input-months",
+        type=int_list,
+        default=None,
+        help="Comma separated list of calendar months (1-12) whose time steps "
+        "are kept when the netCDF files are loaded, e.g. '5,6,7,8,9' for "
+        "May-September. Applies to input and mask files of all splits. "
+        "Default: keep all time steps",
     )
     arg_parser.add_argument(
         "--gnn-layers",
